@@ -110,16 +110,16 @@ fn lower_bound(
     weight_prior: &Gamma,
     noise_prior: &Gamma
 ) -> Result<f64, RegressionError> {
-    Ok(expect_log_p_y(xtx, xty, yty, &s, beta, theta)? +
-    expect_log_p_theta(&s, alpha, theta)? +
-    expect_log_p_alpha(alpha, weight_prior)? +
-    expect_log_p_beta(beta, noise_prior)? -
-    expect_log_q_theta(s)? -
-    expect_log_q_alpha(alpha)? -
-    expect_log_q_beta(beta)?)
+    Ok(expect_ln_p_y(xtx, xty, yty, &s, beta, theta)? +
+    expect_ln_p_theta(&s, alpha, theta)? +
+    expect_ln_p_alpha(alpha, weight_prior)? +
+    expect_ln_p_beta(beta, noise_prior)? -
+    expect_ln_q_theta(s)? -
+    expect_ln_q_alpha(alpha)? -
+    expect_ln_q_beta(beta)?)
 }
 
-fn expect_log_p_y(
+fn expect_ln_p_y(
     xtx: &DenseMatrix,
     xty: &DenseVector,
     yty: f64,
@@ -137,7 +137,7 @@ fn expect_log_p_y(
     Ok(part1 * part2 - part3 + part4 - part5)
 }
 
-fn expect_log_p_theta(
+fn expect_ln_p_theta(
     s: &DenseMatrix,
     alpha: &Vec<Gamma>,
     theta: &DenseVector
@@ -151,7 +151,7 @@ fn expect_log_p_theta(
     })
 }
 
-fn expect_log_p_alpha(
+fn expect_ln_p_alpha(
     alpha: &Vec<Gamma>,
     weight_prior: &Gamma
 ) -> Result<f64, RegressionError> {
@@ -164,20 +164,20 @@ fn expect_log_p_alpha(
     })
 }
 
-fn expect_log_p_beta(beta: &Gamma, noise_prior: &Gamma) -> Result<f64, RegressionError> {
+fn expect_ln_p_beta(beta: &Gamma, noise_prior: &Gamma) -> Result<f64, RegressionError> {
     let part1 = noise_prior.shape() * noise_prior.rate().ln();
     let part2 = (noise_prior.shape() - 1.0) * (digamma(beta.shape()) - beta.rate().ln());
     let part3 = (noise_prior.rate() * beta.mean().unwrap()) + ln_gamma(noise_prior.shape());
     Ok(part1 + part2 - part3)
 }
 
-fn expect_log_q_theta(s: &DenseMatrix) -> Result<f64, RegressionError> {
+fn expect_ln_q_theta(s: &DenseMatrix) -> Result<f64, RegressionError> {
     let m = s.shape().0;
     let chol = Cholesky::new(s.clone()).unwrap();
     Ok(-0.5 * chol.determinant().ln() + (m as f64 / 2.0) * (1.0 + LN_TWO_PI))
 }
 
-fn expect_log_q_alpha(alpha: &Vec<Gamma>) -> Result<f64, RegressionError> {
+fn expect_ln_q_alpha(alpha: &Vec<Gamma>) -> Result<f64, RegressionError> {
     alpha.iter().try_fold(0.0, |sum, a| {
         let part1 = ln_gamma(a.shape());
         let part2 = (a.shape() - 1.0) * digamma(a.shape());
@@ -186,7 +186,7 @@ fn expect_log_q_alpha(alpha: &Vec<Gamma>) -> Result<f64, RegressionError> {
     })
 }
 
-fn expect_log_q_beta(beta: &Gamma) -> Result<f64, RegressionError> {
+fn expect_ln_q_beta(beta: &Gamma) -> Result<f64, RegressionError> {
     Ok(-ln_gamma(beta.shape()) - 
     (beta.shape() - 1.0) * digamma(beta.shape()) - 
     beta.rate().ln() + 
