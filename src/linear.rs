@@ -1,19 +1,13 @@
-use nalgebra::{DVector, Cholesky};
-use nalgebra::DMatrix;
-use nalgebra::SquareMatrix;
+use nalgebra::Cholesky;
 use statrs::distribution::Gamma;
-use std::error::Error;
 use statrs::statistics::Distribution;
 use crate::error::RegressionError;
 use statrs::function::gamma::{digamma, ln_gamma};
-use std::f64::consts::PI;
 use crate::math::LN_TWO_PI;
-
-pub type DenseVector = DVector<f64>;
-pub type DenseMatrix = DMatrix<f64>;
+use crate::config::TrainConfig;
+use crate::{DenseVector, DenseMatrix};
 
 pub struct VariationalLinearRegression {
-    pub intercept: f64,
     pub weights: DenseVector,
     pub covariance: DenseMatrix,
     pub noise_precision: Gamma
@@ -24,10 +18,7 @@ impl VariationalLinearRegression {
     pub fn train(
         features: DenseMatrix,
         labels: DenseVector,
-        weight_prior: Gamma,
-        noise_prior: Gamma,
-        tolerance: f64,
-        max_iter: usize
+        config: TrainConfig
     ) -> Result<VariationalLinearRegression, RegressionError> {
 
         let x = features.insert_column(0, 1.0);
@@ -35,19 +26,27 @@ impl VariationalLinearRegression {
         let xtx = x.tr_mul(&x);
         let xty = x.tr_mul(&y);
         let yty = y.dot(&y);
-        let mut alpha = vec![weight_prior; x.ncols()];
-        let mut beta = noise_prior;
+        let mut alpha = vec![config.weight_prior; x.ncols()];
+        let mut beta = config.noise_prior;
+        let mut bound = f64::NEG_INFINITY;
 
-        let mut iter = 0;
-        for iter in 0..max_iter {
+        for iter in 0..config.max_iter {
             let (theta, s) = q_theta(&xtx, &xty, &alpha, &beta)?;
-            alpha = q_alpha(&s, &theta, &weight_prior)?;
-            beta = q_beta(&xtx, &xty, yty, &theta, &s, &noise_prior)?;
-
+            alpha = q_alpha(&s, &theta, &config.weight_prior)?;
+            beta = q_beta(&xtx, &xty, yty, &theta, &s, &config.noise_prior)?;
+            let new_bound = lower_bound(&xtx, &xty, yty, &theta, &s, &alpha, &beta, &config.weight_prior, &config.noise_prior)?;
+            println!("Iteration {}, Lower Bound = {}", iter + 1, new_bound);
+            if (new_bound - bound) / bound.abs() <= config.tolerance {
+                return Ok(VariationalLinearRegression {
+                    weights: theta, covariance: s, noise_precision: beta
+                })
+            } else {
+                bound = new_bound;
+            }
         }
 
-
-        Err(RegressionError::from(""))
+        let message = format!("Model failed to converge in {} iterations", config.max_iter);
+        Err(RegressionError::from(message))
     }
 
 
@@ -100,6 +99,26 @@ fn q_beta(
     Gamma::new(shape, inv_scale).map_err(RegressionError::from)
 }
 
+fn lower_bound(
+    xtx: &DenseMatrix, 
+    xty: &DenseVector, 
+    yty: f64,
+    theta: &DenseVector,
+    s: &DenseMatrix,
+    alpha: &Vec<Gamma>,
+    beta: &Gamma,
+    weight_prior: &Gamma,
+    noise_prior: &Gamma
+) -> Result<f64, RegressionError> {
+    Ok(expect_log_p_y(xtx, xty, yty, &s, beta, theta)? +
+    expect_log_p_theta(&s, alpha, theta)? +
+    expect_log_p_alpha(alpha, weight_prior)? +
+    expect_log_p_beta(beta, noise_prior)? -
+    expect_log_q_theta(s)? -
+    expect_log_q_alpha(alpha)? -
+    expect_log_q_beta(beta)?)
+}
+
 fn expect_log_p_y(
     xtx: &DenseMatrix,
     xty: &DenseVector,
@@ -143,4 +162,33 @@ fn expect_log_p_alpha(
         let term3 = (weight_prior.rate() * a_mean) - ln_gamma(weight_prior.shape());
         Ok(sum + term1 + term2 - term3)
     })
+}
+
+fn expect_log_p_beta(beta: &Gamma, noise_prior: &Gamma) -> Result<f64, RegressionError> {
+    let part1 = noise_prior.shape() * noise_prior.rate().ln();
+    let part2 = (noise_prior.shape() - 1.0) * (digamma(beta.shape()) - beta.rate().ln());
+    let part3 = (noise_prior.rate() * beta.mean().unwrap()) + ln_gamma(noise_prior.shape());
+    Ok(part1 + part2 - part3)
+}
+
+fn expect_log_q_theta(s: &DenseMatrix) -> Result<f64, RegressionError> {
+    let m = s.shape().0;
+    let chol = Cholesky::new(s.clone()).unwrap();
+    Ok(-0.5 * chol.determinant().ln() + (m as f64 / 2.0) * (1.0 + LN_TWO_PI))
+}
+
+fn expect_log_q_alpha(alpha: &Vec<Gamma>) -> Result<f64, RegressionError> {
+    alpha.iter().try_fold(0.0, |sum, a| {
+        let part1 = ln_gamma(a.shape());
+        let part2 = (a.shape() - 1.0) * digamma(a.shape());
+        let part3 = a.shape() - a.rate().ln();
+        Ok(sum - (part1 - part2 + part3))
+    })
+}
+
+fn expect_log_q_beta(beta: &Gamma) -> Result<f64, RegressionError> {
+    Ok(-ln_gamma(beta.shape()) - 
+    (beta.shape() - 1.0) * digamma(beta.shape()) - 
+    beta.rate().ln() + 
+    beta.shape())
 }
