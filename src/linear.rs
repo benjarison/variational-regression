@@ -127,7 +127,7 @@ fn expect_ln_p_y(
     beta: &Gamma,
     theta: &DenseVector
 ) -> Result<f64, RegressionError> {
-    let bm = beta.mean().ok_or(RegressionError::from("invalid gamma mean"))?;
+    let bm = mean(beta)?;
     let tc = theta * theta.transpose();
     let part1 = xty.len() as f64 * 0.5;
     let part2 = digamma(beta.shape()) - beta.rate().ln() - LN_TWO_PI;
@@ -144,8 +144,8 @@ fn expect_ln_p_theta(
 ) -> Result<f64, RegressionError> {
     let init = (theta.len() as f64 * -0.5) * LN_TWO_PI;
     alpha.iter().enumerate().try_fold(init, |sum, (i, a)| {
-        let am = alpha[i].mean().ok_or(RegressionError::from("invalid gamma mean"))?;
-        let part1 = digamma(alpha[i].shape()) - alpha[i].rate().ln();
+        let am = mean(a)?;
+        let part1 = digamma(a.shape()) - a.rate().ln();
         let part2 = (theta[i] * theta[i] + s[(i, i)]) * am;
         Ok(sum + 0.5 * (part1 - part2))
     })
@@ -156,10 +156,10 @@ fn expect_ln_p_alpha(
     weight_prior: &Gamma
 ) -> Result<f64, RegressionError> {
     alpha.iter().try_fold(0.0, |sum, a| {
-        let a_mean = a.mean().ok_or(RegressionError::from("invalid gamma mean"))?;
+        let am = mean(a)?;
         let term1 = weight_prior.shape() * weight_prior.rate().ln();
         let term2 = (weight_prior.shape() - 1.0) * (digamma(a.shape()) - a.rate().ln());
-        let term3 = (weight_prior.rate() * a_mean) - ln_gamma(weight_prior.shape());
+        let term3 = (weight_prior.rate() * am) - ln_gamma(weight_prior.shape());
         Ok(sum + term1 + term2 - term3)
     })
 }
@@ -191,4 +191,9 @@ fn expect_ln_q_beta(beta: &Gamma) -> Result<f64, RegressionError> {
     (beta.shape() - 1.0) * digamma(beta.shape()) - 
     beta.rate().ln() + 
     beta.shape())
+}
+
+#[inline]
+fn mean(dist: &Gamma) -> Result<f64, RegressionError> {
+    dist.mean().ok_or(RegressionError::from("Invalid gamma mean"))
 }
