@@ -1,6 +1,5 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter, Debug};
-use statrs::StatsError;
 use std::convert::From;
 
 #[derive(Debug)]
@@ -15,12 +14,6 @@ impl Display for RegressionError {
 }
 
 impl Error for RegressionError {}
-
-impl From<StatsError> for RegressionError {
-    fn from(err: StatsError) -> Self {
-        RegressionError {message: err.to_string()}
-    }
-}
 
 impl From<&str> for RegressionError {
     fn from(msg: &str) -> RegressionError {

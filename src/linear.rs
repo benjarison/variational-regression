@@ -1,28 +1,36 @@
-use nalgebra::Cholesky;
-use statrs::distribution::Gamma;
-use statrs::statistics::Distribution;
+use nalgebra::{Cholesky, DVector, DMatrix};
 use crate::error::RegressionError;
-use statrs::function::gamma::{digamma, ln_gamma};
+use special::Gamma;
+use crate::distribution::{GammaDistribution, GaussianDistribution};
 use crate::math::LN_TWO_PI;
 use crate::config::TrainConfig;
-use crate::{DenseVector, DenseMatrix};
+use serde::{Serialize, Deserialize};
 
+type DenseVector = DVector<f64>;
+type DenseMatrix = DMatrix<f64>;
+
+
+#[derive(Serialize, Deserialize)]
 pub struct VariationalLinearRegression {
     pub weights: DenseVector,
     pub covariance: DenseMatrix,
-    pub noise_precision: Gamma
+    pub noise_precision: GammaDistribution
 }
 
 impl VariationalLinearRegression {
 
     pub fn train(
-        features: DenseMatrix,
-        labels: DenseVector,
+        features: Vec<Vec<f64>>,
+        labels: Vec<f64>,
         config: TrainConfig
     ) -> Result<VariationalLinearRegression, RegressionError> {
 
-        let x = features.insert_column(0, 1.0);
-        let y = labels;
+        let n = features.len();
+        let d = features[0].len();
+        let x = DenseMatrix::from_vec(d, n, features.into_iter().flatten().collect())
+        .transpose()
+        .insert_column(0, 1.0);
+        let y = DenseVector::from_vec(labels);
         let xtx = x.tr_mul(&x);
         let xty = x.tr_mul(&y);
         let yty = y.dot(&y);
@@ -33,7 +41,7 @@ impl VariationalLinearRegression {
         for iter in 0..config.max_iter {
             let (theta, s) = q_theta(&xtx, &xty, &alpha, &beta)?;
             alpha = q_alpha(&s, &theta, &config.weight_prior)?;
-            beta = q_beta(&xtx, &xty, yty, &theta, &s, &config.noise_prior)?;
+            beta = q_beta(&xtx, &xty, yty, &theta, &s, n, &config.noise_prior)?;
             let new_bound = lower_bound(&xtx, &xty, yty, &theta, &s, &alpha, &beta, &config.weight_prior, &config.noise_prior)?;
             println!("Iteration {}, Lower Bound = {}", iter + 1, new_bound);
             if (new_bound - bound) / bound.abs() <= config.tolerance {
@@ -49,40 +57,43 @@ impl VariationalLinearRegression {
         Err(RegressionError::from(message))
     }
 
-
+    pub fn predict(&self, features: Vec<f64>) -> Result<GaussianDistribution, RegressionError> {
+        let x = DenseVector::from_vec(features).insert_row(0, 1.0);
+        let npm = self.noise_precision.mean();
+        let pred_mean = x.dot(&self.weights);
+        let pred_var = (1.0 / npm) + (&self.covariance * &x).dot(&x);
+        GaussianDistribution::new(pred_mean, pred_var)
+    }
 }
 
 fn q_theta(
     xtx: &DenseMatrix,
     xty: &DenseVector,
-    alpha: &Vec<Gamma>,
-    beta: &Gamma
+    alpha: &Vec<GammaDistribution>,
+    beta: &GammaDistribution
 ) -> Result<(DenseVector, DenseMatrix), RegressionError> {
 
-    let b = beta.mean().ok_or(RegressionError::from("noise precision error"))?;
-    let mut s_inv = xtx * b;
+    let mut s_inv = xtx * beta.mean();
     for i in 0..alpha.len() {
-        let a = alpha[i]
-            .mean()
-            .ok_or(RegressionError::from("weight precision error"))?;
+        let a = alpha[i].mean();
         s_inv[(i, i)] += a;
     }
     let s = Cholesky::new(s_inv)
         .ok_or(RegressionError::from("cholesky error"))?
         .inverse();
-    let theta = (&s * b) * xty;
+    let theta = (&s * beta.mean()) * xty;
     Ok((theta, s))
 }
 
 fn q_alpha(
     s: &DenseMatrix,
     theta: &DenseVector,
-    weight_prior: &Gamma,
-) -> Result<Vec<Gamma>, RegressionError> {
+    weight_prior: &GammaDistribution,
+) -> Result<Vec<GammaDistribution>, RegressionError> {
     (0..theta.len()).map(|i| {
         let inv_scale = weight_prior.rate() + 0.5 * (theta[i] * theta[i] + s[(i, i)]);
-        Gamma::new(weight_prior.shape() + 0.5, inv_scale).map_err(RegressionError::from)
-    }).collect::<Result<Vec<Gamma>, RegressionError>>()
+        GammaDistribution::new(weight_prior.shape() + 0.5, inv_scale)
+    }).collect::<Result<Vec<GammaDistribution>, RegressionError>>()
 }
 
 fn q_beta(
@@ -91,12 +102,13 @@ fn q_beta(
     yty: f64,
     theta: &DenseVector,
     s: &DenseMatrix,
-    noise_prior: &Gamma
-) -> Result<Gamma, RegressionError> {
-    let shape = noise_prior.shape() + (xty.len() as f64 / 2.0);
+    n: usize,
+    noise_prior: &GammaDistribution
+) -> Result<GammaDistribution, RegressionError> {
+    let shape = noise_prior.shape() + (n as f64 / 2.0);
     let t = (xtx * (theta * theta.transpose() + s)).trace();
     let inv_scale = noise_prior.rate() + 0.5 * (yty - 2.0 * theta.dot(xty) + t);
-    Gamma::new(shape, inv_scale).map_err(RegressionError::from)
+    GammaDistribution::new(shape, inv_scale)
 }
 
 fn lower_bound(
@@ -105,10 +117,10 @@ fn lower_bound(
     yty: f64,
     theta: &DenseVector,
     s: &DenseMatrix,
-    alpha: &Vec<Gamma>,
-    beta: &Gamma,
-    weight_prior: &Gamma,
-    noise_prior: &Gamma
+    alpha: &Vec<GammaDistribution>,
+    beta: &GammaDistribution,
+    weight_prior: &GammaDistribution,
+    noise_prior: &GammaDistribution
 ) -> Result<f64, RegressionError> {
     Ok(expect_ln_p_y(xtx, xty, yty, &s, beta, theta)? +
     expect_ln_p_theta(&s, alpha, theta)? +
@@ -124,13 +136,13 @@ fn expect_ln_p_y(
     xty: &DenseVector,
     yty: f64,
     s: &DenseMatrix,
-    beta: &Gamma,
+    beta: &GammaDistribution,
     theta: &DenseVector
 ) -> Result<f64, RegressionError> {
-    let bm = mean(beta)?;
+    let bm = beta.mean();
     let tc = theta * theta.transpose();
     let part1 = xty.len() as f64 * 0.5;
-    let part2 = digamma(beta.shape()) - beta.rate().ln() - LN_TWO_PI;
+    let part2 = Gamma::digamma(beta.shape()) - beta.rate().ln() - LN_TWO_PI;
     let part3 = (bm * 0.5) * yty;
     let part4 = bm * theta.dot(xty);
     let part5 = (bm * 0.5) * (xtx * (tc + s)).trace();
@@ -139,61 +151,62 @@ fn expect_ln_p_y(
 
 fn expect_ln_p_theta(
     s: &DenseMatrix,
-    alpha: &Vec<Gamma>,
+    alpha: &Vec<GammaDistribution>,
     theta: &DenseVector
 ) -> Result<f64, RegressionError> {
     let init = (theta.len() as f64 * -0.5) * LN_TWO_PI;
     alpha.iter().enumerate().try_fold(init, |sum, (i, a)| {
-        let am = mean(a)?;
-        let part1 = digamma(a.shape()) - a.rate().ln();
+        let am = a.mean();
+        let part1 = Gamma::digamma(a.shape()) - a.rate().ln();
         let part2 = (theta[i] * theta[i] + s[(i, i)]) * am;
         Ok(sum + 0.5 * (part1 - part2))
     })
 }
 
 fn expect_ln_p_alpha(
-    alpha: &Vec<Gamma>,
-    weight_prior: &Gamma
+    alpha: &Vec<GammaDistribution>,
+    weight_prior: &GammaDistribution
 ) -> Result<f64, RegressionError> {
     alpha.iter().try_fold(0.0, |sum, a| {
-        let am = mean(a)?;
+        let am = a.mean();
         let term1 = weight_prior.shape() * weight_prior.rate().ln();
-        let term2 = (weight_prior.shape() - 1.0) * (digamma(a.shape()) - a.rate().ln());
-        let term3 = (weight_prior.rate() * am) - ln_gamma(weight_prior.shape());
+        let term2 = (weight_prior.shape() - 1.0) * (Gamma::digamma(a.shape()) - a.rate().ln());
+        let term3 = (weight_prior.rate() * am) + Gamma::ln_gamma(weight_prior.shape()).0;
         Ok(sum + term1 + term2 - term3)
     })
 }
 
-fn expect_ln_p_beta(beta: &Gamma, noise_prior: &Gamma) -> Result<f64, RegressionError> {
+fn expect_ln_p_beta(beta: &GammaDistribution, noise_prior: &GammaDistribution) -> Result<f64, RegressionError> {
     let part1 = noise_prior.shape() * noise_prior.rate().ln();
-    let part2 = (noise_prior.shape() - 1.0) * (digamma(beta.shape()) - beta.rate().ln());
-    let part3 = (noise_prior.rate() * beta.mean().unwrap()) + ln_gamma(noise_prior.shape());
+    let part2 = (noise_prior.shape() - 1.0) * (Gamma::digamma(beta.shape()) - beta.rate().ln());
+    let part3 = (noise_prior.rate() * beta.mean()) + Gamma::ln_gamma(noise_prior.shape()).0;
     Ok(part1 + part2 - part3)
 }
 
 fn expect_ln_q_theta(s: &DenseMatrix) -> Result<f64, RegressionError> {
     let m = s.shape().0;
-    let chol = Cholesky::new(s.clone()).unwrap();
-    Ok(-0.5 * chol.determinant().ln() + (m as f64 / 2.0) * (1.0 + LN_TWO_PI))
+    let chol = Cholesky::new(s.clone()).unwrap().l();
+    let mut ln_det = 0.0;
+    for i in 0..s.ncols() {
+        ln_det += chol[(i, i)].ln();
+    }
+    ln_det *= 2.0;
+    Ok(-(0.5 * ln_det + (m as f64 / 2.0) * (1.0 + LN_TWO_PI)))
 }
 
-fn expect_ln_q_alpha(alpha: &Vec<Gamma>) -> Result<f64, RegressionError> {
+fn expect_ln_q_alpha(alpha: &Vec<GammaDistribution>) -> Result<f64, RegressionError> {
     alpha.iter().try_fold(0.0, |sum, a| {
-        let part1 = ln_gamma(a.shape());
-        let part2 = (a.shape() - 1.0) * digamma(a.shape());
+        let part1 = Gamma::ln_gamma(a.shape()).0;
+        let part2 = (a.shape() - 1.0) * Gamma::digamma(a.shape());
         let part3 = a.shape() - a.rate().ln();
         Ok(sum - (part1 - part2 + part3))
     })
 }
 
-fn expect_ln_q_beta(beta: &Gamma) -> Result<f64, RegressionError> {
-    Ok(-ln_gamma(beta.shape()) - 
-    (beta.shape() - 1.0) * digamma(beta.shape()) - 
+fn expect_ln_q_beta(beta: &GammaDistribution) -> Result<f64, RegressionError> {
+    Ok(-(Gamma::ln_gamma(beta.shape()).0 - 
+    (beta.shape() - 1.0) * Gamma::digamma(beta.shape()) - 
     beta.rate().ln() + 
-    beta.shape())
+    beta.shape()))
 }
 
-#[inline]
-fn mean(dist: &Gamma) -> Result<f64, RegressionError> {
-    dist.mean().ok_or(RegressionError::from("Invalid gamma mean"))
-}
