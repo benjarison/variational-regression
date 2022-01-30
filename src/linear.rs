@@ -10,27 +10,42 @@ type DenseVector = DVector<f64>;
 type DenseMatrix = DMatrix<f64>;
 
 
+///
+/// Represents a linear regression model trained via variational inference
+/// 
 #[derive(Serialize, Deserialize)]
 pub struct VariationalLinearRegression {
+    /// Learned model weights
     pub weights: DenseVector,
+    /// Feature covariance matrix
     pub covariance: DenseMatrix,
+    /// Noise precision distribution
     pub noise_precision: GammaDistribution
 }
 
 impl VariationalLinearRegression {
 
+    ///
+    /// Trains the model on the provided data
+    /// 
+    /// # Arguments
+    /// 
+    /// `features` - The feature values (in row-major orientation)
+    /// `labels` - The vector of corresponding labels
+    /// `config` - The training configuration
+    /// 
     pub fn train(
         features: Vec<Vec<f64>>,
         labels: Vec<f64>,
         config: TrainConfig
     ) -> Result<VariationalLinearRegression, RegressionError> {
-
+        // precompute required values
         let mut problem = Problem::new(features, labels, &config);
-
+        // optimize the variational lower bound until convergence
         for iter in 0..config.max_iter {
-            q_theta(&mut problem)?;
-            q_alpha(&mut problem)?;
-            q_beta(&mut problem)?;
+            q_theta(&mut problem)?; // model parameters
+            q_alpha(&mut problem)?; // weight precisions
+            q_beta(&mut problem)?; // noise precision
             let new_bound = lower_bound(&problem)?;
             println!("Iteration {}, Lower Bound = {}", iter + 1, new_bound);
             if (new_bound - problem.bound) / problem.bound.abs() <= config.tolerance {
@@ -41,11 +56,18 @@ impl VariationalLinearRegression {
                 problem.bound = new_bound;
             }
         }
-
+        // admit defeat
         let message = format!("Model failed to converge in {} iterations", config.max_iter);
         Err(RegressionError::from(message))
     }
 
+    ///
+    /// Computes the predictive distribution for the provided features
+    /// 
+    /// # Arguments
+    /// 
+    /// `features` - The vector of feature values
+    /// 
     pub fn predict(&self, features: Vec<f64>) -> Result<GaussianDistribution, RegressionError> {
         let x = DenseVector::from_vec(features).insert_row(0, 1.0);
         let npm = self.noise_precision.mean();

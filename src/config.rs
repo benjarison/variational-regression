@@ -1,9 +1,16 @@
 use crate::distribution::GammaDistribution;
 
+///
+/// Specifies configurable hyperparameters for training
+/// 
 pub struct TrainConfig {
+    /// Prior distribution over the precision of the model weights
     pub weight_precision_prior: GammaDistribution,
+    /// Prior distribution over the precision of the noise term
     pub noise_precision_prior: GammaDistribution,
+    /// Maximum number of training iterations
     pub max_iter: usize,
+    /// Convergence criteria threshold
     pub tolerance: f64
 }
 
