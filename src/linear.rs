@@ -25,31 +25,20 @@ impl VariationalLinearRegression {
         config: TrainConfig
     ) -> Result<VariationalLinearRegression, RegressionError> {
 
-        let n = features.len();
-        let d = features[0].len();
-        let x = DenseMatrix::from_row_slice(
-            n, d, features.into_iter().flatten().collect::<Vec<f64>>().as_slice()
-        ).insert_column(0, 1.0);
-        let y = DenseVector::from_vec(labels);
-        let xtx = x.tr_mul(&x);
-        let xty = x.tr_mul(&y);
-        let yty = y.dot(&y);
-        let mut alpha = vec![config.weight_prior; x.ncols()];
-        let mut beta = config.noise_prior;
-        let mut bound = f64::NEG_INFINITY;
+        let mut problem = Problem::new(features, labels, &config);
 
         for iter in 0..config.max_iter {
-            let (theta, s) = q_theta(&xtx, &xty, &alpha, &beta)?;
-            alpha = q_alpha(&s, &theta, &config.weight_prior)?;
-            beta = q_beta(&xtx, &xty, yty, &theta, &s, n, &config.noise_prior)?;
-            let new_bound = lower_bound(&xtx, &xty, yty, &theta, &s, &alpha, &beta, &config.weight_prior, &config.noise_prior)?;
+            q_theta(&mut problem)?;
+            q_alpha(&mut problem)?;
+            q_beta(&mut problem)?;
+            let new_bound = lower_bound(&problem)?;
             println!("Iteration {}, Lower Bound = {}", iter + 1, new_bound);
-            if (new_bound - bound) / bound.abs() <= config.tolerance {
+            if (new_bound - problem.bound) / problem.bound.abs() <= config.tolerance {
                 return Ok(VariationalLinearRegression {
-                    weights: theta, covariance: s, noise_precision: beta
+                    weights: problem.theta, covariance: problem.s, noise_precision: problem.beta
                 })
             } else {
-                bound = new_bound;
+                problem.bound = new_bound;
             }
         }
 
@@ -66,136 +55,137 @@ impl VariationalLinearRegression {
     }
 }
 
-fn q_theta(
-    xtx: &DenseMatrix,
-    xty: &DenseVector,
-    alpha: &Vec<GammaDistribution>,
-    beta: &GammaDistribution
-) -> Result<(DenseVector, DenseMatrix), RegressionError> {
+struct Problem {
+    pub xtx: DenseMatrix,
+    pub xty: DenseVector,
+    pub yty: f64,
+    pub theta: DenseVector,
+    pub s: DenseMatrix,
+    pub alpha: Vec<GammaDistribution>,
+    pub beta: GammaDistribution,
+    pub wpp: GammaDistribution,
+    pub npp: GammaDistribution,
+    pub n: usize,
+    pub d: usize,
+    pub bound: f64
+}
 
-    let mut s_inv = xtx * beta.mean();
-    for i in 0..alpha.len() {
-        let a = alpha[i].mean();
+impl Problem {
+    fn new(
+        features: Vec<Vec<f64>>,
+        labels: Vec<f64>,
+        config: &TrainConfig
+    ) -> Problem {
+        let n = features.len();
+        let d = features[0].len() + 1;
+        let x = DenseMatrix::from_row_slice(
+            n, d - 1, features.into_iter().flatten().collect::<Vec<f64>>().as_slice()
+        ).insert_column(0, 1.0);
+        let y = DenseVector::from_vec(labels);
+        let xtx = x.tr_mul(&x);
+        let xty = x.tr_mul(&y);
+        let yty = y.dot(&y);
+        let wpp = config.weight_precision_prior;
+        let npp = config.noise_precision_prior;
+        let alpha = vec![wpp; x.ncols()];
+        let beta = npp;
+        let bound = f64::NEG_INFINITY;
+        let theta = DenseVector::zeros(d);
+        let s = DenseMatrix::zeros(d, d);
+        Problem {xtx, xty, yty, theta, s, alpha, beta, wpp, npp, n, d, bound}
+    }
+}
+
+fn q_theta(prob: &mut Problem) -> Result<(), RegressionError> {
+    let mut s_inv = &prob.xtx * prob.beta.mean();
+    for i in 0..prob.d {
+        let a = prob.alpha[i].mean();
         s_inv[(i, i)] += a;
     }
-    let s = Cholesky::new(s_inv)
+    prob.s = Cholesky::new(s_inv)
         .ok_or(RegressionError::from("cholesky error"))?
         .inverse();
-    let theta = (&s * beta.mean()) * xty;
-    Ok((theta, s))
+    prob.theta = (&prob.s * prob.beta.mean()) * &prob.xty;
+    Ok(())
 }
 
-fn q_alpha(
-    s: &DenseMatrix,
-    theta: &DenseVector,
-    weight_prior: &GammaDistribution,
-) -> Result<Vec<GammaDistribution>, RegressionError> {
-    (0..theta.len()).map(|i| {
-        let inv_scale = weight_prior.rate() + 0.5 * (theta[i] * theta[i] + s[(i, i)]);
-        GammaDistribution::new(weight_prior.shape() + 0.5, inv_scale)
-    }).collect::<Result<Vec<GammaDistribution>, RegressionError>>()
+fn q_alpha(prob: &mut Problem) -> Result<(), RegressionError> {
+    for i in 0..prob.d {
+        let inv_scale = prob.wpp.rate() + 0.5 * (prob.theta[i] * prob.theta[i] + prob.s[(i, i)]);
+        prob.alpha[i] = GammaDistribution::new(prob.wpp.shape() + 0.5, inv_scale)?;
+    }
+    Ok(())
 }
 
-fn q_beta(
-    xtx: &DenseMatrix,
-    xty: &DenseVector,
-    yty: f64,
-    theta: &DenseVector,
-    s: &DenseMatrix,
-    n: usize,
-    noise_prior: &GammaDistribution
-) -> Result<GammaDistribution, RegressionError> {
-    let shape = noise_prior.shape() + (n as f64 / 2.0);
-    let t = (xtx * (theta * theta.transpose() + s)).trace();
-    let inv_scale = noise_prior.rate() + 0.5 * (yty - 2.0 * theta.dot(xty) + t);
-    GammaDistribution::new(shape, inv_scale)
+fn q_beta(prob: &mut Problem) -> Result<(), RegressionError> {
+    let shape = prob.npp.shape() + (prob.n as f64 / 2.0);
+    let t = (&prob.xtx * (&prob.theta * prob.theta.transpose() + &prob.s)).trace();
+    let inv_scale = prob.npp.rate() + 0.5 * (prob.yty - 2.0 * prob.theta.dot(&prob.xty) + t);
+    prob.beta = GammaDistribution::new(shape, inv_scale)?;
+    Ok(())
 }
 
-fn lower_bound(
-    xtx: &DenseMatrix, 
-    xty: &DenseVector, 
-    yty: f64,
-    theta: &DenseVector,
-    s: &DenseMatrix,
-    alpha: &Vec<GammaDistribution>,
-    beta: &GammaDistribution,
-    weight_prior: &GammaDistribution,
-    noise_prior: &GammaDistribution
-) -> Result<f64, RegressionError> {
-    Ok(expect_ln_p_y(xtx, xty, yty, &s, beta, theta)? +
-    expect_ln_p_theta(&s, alpha, theta)? +
-    expect_ln_p_alpha(alpha, weight_prior)? +
-    expect_ln_p_beta(beta, noise_prior)? -
-    expect_ln_q_theta(s)? -
-    expect_ln_q_alpha(alpha)? -
-    expect_ln_q_beta(beta)?)
+fn lower_bound(prob: &Problem) -> Result<f64, RegressionError> {
+    Ok(expect_ln_p_y(prob)? +
+    expect_ln_p_theta(prob)? +
+    expect_ln_p_alpha(prob)? +
+    expect_ln_p_beta(prob)? -
+    expect_ln_q_theta(prob)? -
+    expect_ln_q_alpha(prob)? -
+    expect_ln_q_beta(prob)?)
 }
 
-fn expect_ln_p_y(
-    xtx: &DenseMatrix,
-    xty: &DenseVector,
-    yty: f64,
-    s: &DenseMatrix,
-    beta: &GammaDistribution,
-    theta: &DenseVector
-) -> Result<f64, RegressionError> {
-    let bm = beta.mean();
-    let tc = theta * theta.transpose();
-    let part1 = xty.len() as f64 * 0.5;
-    let part2 = Gamma::digamma(beta.shape()) - beta.rate().ln() - LN_TWO_PI;
-    let part3 = (bm * 0.5) * yty;
-    let part4 = bm * theta.dot(xty);
-    let part5 = (bm * 0.5) * (xtx * (tc + s)).trace();
+fn expect_ln_p_y(prob: &Problem) -> Result<f64, RegressionError> {
+    let bm = prob.beta.mean();
+    let tc = &prob.theta * prob.theta.transpose();
+    let part1 = prob.xty.len() as f64 * 0.5;
+    let part2 = Gamma::digamma(prob.beta.shape()) - prob.beta.rate().ln() - LN_TWO_PI;
+    let part3 = (bm * 0.5) * prob.yty;
+    let part4 = bm * prob.theta.dot(&prob.xty);
+    let part5 = (bm * 0.5) * (&prob.xtx * (tc + &prob.s)).trace();
     Ok(part1 * part2 - part3 + part4 - part5)
 }
 
-fn expect_ln_p_theta(
-    s: &DenseMatrix,
-    alpha: &Vec<GammaDistribution>,
-    theta: &DenseVector
-) -> Result<f64, RegressionError> {
-    let init = (theta.len() as f64 * -0.5) * LN_TWO_PI;
-    alpha.iter().enumerate().try_fold(init, |sum, (i, a)| {
+fn expect_ln_p_theta(prob: &Problem) -> Result<f64, RegressionError> {
+    let init = (prob.theta.len() as f64 * -0.5) * LN_TWO_PI;
+    prob.alpha.iter().enumerate().try_fold(init, |sum, (i, a)| {
         let am = a.mean();
         let part1 = Gamma::digamma(a.shape()) - a.rate().ln();
-        let part2 = (theta[i] * theta[i] + s[(i, i)]) * am;
+        let part2 = (prob.theta[i] * prob.theta[i] + prob.s[(i, i)]) * am;
         Ok(sum + 0.5 * (part1 - part2))
     })
 }
 
-fn expect_ln_p_alpha(
-    alpha: &Vec<GammaDistribution>,
-    weight_prior: &GammaDistribution
-) -> Result<f64, RegressionError> {
-    alpha.iter().try_fold(0.0, |sum, a| {
+fn expect_ln_p_alpha(prob: &Problem) -> Result<f64, RegressionError> {
+    prob.alpha.iter().try_fold(0.0, |sum, a| {
         let am = a.mean();
-        let term1 = weight_prior.shape() * weight_prior.rate().ln();
-        let term2 = (weight_prior.shape() - 1.0) * (Gamma::digamma(a.shape()) - a.rate().ln());
-        let term3 = (weight_prior.rate() * am) + Gamma::ln_gamma(weight_prior.shape()).0;
+        let term1 = prob.wpp.shape() * prob.wpp.rate().ln();
+        let term2 = (prob.wpp.shape() - 1.0) * (Gamma::digamma(a.shape()) - a.rate().ln());
+        let term3 = (prob.wpp.rate() * am) + Gamma::ln_gamma(prob.wpp.shape()).0;
         Ok(sum + term1 + term2 - term3)
     })
 }
 
-fn expect_ln_p_beta(beta: &GammaDistribution, noise_prior: &GammaDistribution) -> Result<f64, RegressionError> {
-    let part1 = noise_prior.shape() * noise_prior.rate().ln();
-    let part2 = (noise_prior.shape() - 1.0) * (Gamma::digamma(beta.shape()) - beta.rate().ln());
-    let part3 = (noise_prior.rate() * beta.mean()) + Gamma::ln_gamma(noise_prior.shape()).0;
+fn expect_ln_p_beta(prob: &Problem) -> Result<f64, RegressionError> {
+    let part1 = prob.npp.shape() * prob.npp.rate().ln();
+    let part2 = (prob.npp.shape() - 1.0) * (Gamma::digamma(prob.beta.shape()) - prob.beta.rate().ln());
+    let part3 = (prob.npp.rate() * prob.beta.mean()) + Gamma::ln_gamma(prob.npp.shape()).0;
     Ok(part1 + part2 - part3)
 }
 
-fn expect_ln_q_theta(s: &DenseMatrix) -> Result<f64, RegressionError> {
-    let m = s.shape().0;
-    let chol = Cholesky::new(s.clone()).unwrap().l();
+fn expect_ln_q_theta(prob: &Problem) -> Result<f64, RegressionError> {
+    let m = prob.s.shape().0;
+    let chol = Cholesky::new(prob.s.clone()).unwrap().l();
     let mut ln_det = 0.0;
-    for i in 0..s.ncols() {
+    for i in 0..prob.s.ncols() {
         ln_det += chol[(i, i)].ln();
     }
     ln_det *= 2.0;
     Ok(-(0.5 * ln_det + (m as f64 / 2.0) * (1.0 + LN_TWO_PI)))
 }
 
-fn expect_ln_q_alpha(alpha: &Vec<GammaDistribution>) -> Result<f64, RegressionError> {
-    alpha.iter().try_fold(0.0, |sum, a| {
+fn expect_ln_q_alpha(prob: &Problem) -> Result<f64, RegressionError> {
+    prob.alpha.iter().try_fold(0.0, |sum, a| {
         let part1 = Gamma::ln_gamma(a.shape()).0;
         let part2 = (a.shape() - 1.0) * Gamma::digamma(a.shape());
         let part3 = a.shape() - a.rate().ln();
@@ -203,10 +193,10 @@ fn expect_ln_q_alpha(alpha: &Vec<GammaDistribution>) -> Result<f64, RegressionEr
     })
 }
 
-fn expect_ln_q_beta(beta: &GammaDistribution) -> Result<f64, RegressionError> {
-    Ok(-(Gamma::ln_gamma(beta.shape()).0 - 
-    (beta.shape() - 1.0) * Gamma::digamma(beta.shape()) - 
-    beta.rate().ln() + 
-    beta.shape()))
+fn expect_ln_q_beta(prob: &Problem) -> Result<f64, RegressionError> {
+    Ok(-(Gamma::ln_gamma(prob.beta.shape()).0 - 
+    (prob.beta.shape() - 1.0) * Gamma::digamma(prob.beta.shape()) - 
+    prob.beta.rate().ln() + 
+    prob.beta.shape()))
 }
 
