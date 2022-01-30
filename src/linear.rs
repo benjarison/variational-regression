@@ -27,9 +27,9 @@ impl VariationalLinearRegression {
 
         let n = features.len();
         let d = features[0].len();
-        let x = DenseMatrix::from_vec(d, n, features.into_iter().flatten().collect())
-        .transpose()
-        .insert_column(0, 1.0);
+        let x = DenseMatrix::from_row_slice(
+            n, d, features.into_iter().flatten().collect::<Vec<f64>>().as_slice()
+        ).insert_column(0, 1.0);
         let y = DenseVector::from_vec(labels);
         let xtx = x.tr_mul(&x);
         let xty = x.tr_mul(&y);
