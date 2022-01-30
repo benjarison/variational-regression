@@ -77,6 +77,7 @@ impl VariationalLinearRegression {
     }
 }
 
+// Defines the regression problem
 struct Problem {
     pub xtx: DenseMatrix,
     pub xty: DenseVector,
@@ -118,6 +119,7 @@ impl Problem {
     }
 }
 
+// Factorized distribution for parameter weights
 fn q_theta(prob: &mut Problem) -> Result<(), RegressionError> {
     let mut s_inv = &prob.xtx * prob.beta.mean();
     for i in 0..prob.d {
@@ -131,6 +133,7 @@ fn q_theta(prob: &mut Problem) -> Result<(), RegressionError> {
     Ok(())
 }
 
+// Factorized distribution for weight precisions
 fn q_alpha(prob: &mut Problem) -> Result<(), RegressionError> {
     for i in 0..prob.d {
         let inv_scale = prob.wpp.rate() + 0.5 * (prob.theta[i] * prob.theta[i] + prob.s[(i, i)]);
@@ -139,6 +142,7 @@ fn q_alpha(prob: &mut Problem) -> Result<(), RegressionError> {
     Ok(())
 }
 
+// Factorized distribution for noise precision
 fn q_beta(prob: &mut Problem) -> Result<(), RegressionError> {
     let shape = prob.npp.shape() + (prob.n as f64 / 2.0);
     let t = (&prob.xtx * (&prob.theta * prob.theta.transpose() + &prob.s)).trace();
@@ -147,6 +151,7 @@ fn q_beta(prob: &mut Problem) -> Result<(), RegressionError> {
     Ok(())
 }
 
+// Variational lower bound given current model parameters
 fn lower_bound(prob: &Problem) -> Result<f64, RegressionError> {
     Ok(expect_ln_p_y(prob)? +
     expect_ln_p_theta(prob)? +
@@ -157,6 +162,7 @@ fn lower_bound(prob: &Problem) -> Result<f64, RegressionError> {
     expect_ln_q_beta(prob)?)
 }
 
+// Expected log probability of labels conditioned on parameter weights
 fn expect_ln_p_y(prob: &Problem) -> Result<f64, RegressionError> {
     let bm = prob.beta.mean();
     let tc = &prob.theta * prob.theta.transpose();
@@ -168,6 +174,7 @@ fn expect_ln_p_y(prob: &Problem) -> Result<f64, RegressionError> {
     Ok(part1 * part2 - part3 + part4 - part5)
 }
 
+// Expceted log probability of parameter weights conditioned on their precisions
 fn expect_ln_p_theta(prob: &Problem) -> Result<f64, RegressionError> {
     let init = (prob.theta.len() as f64 * -0.5) * LN_2PI;
     prob.alpha.iter().enumerate().try_fold(init, |sum, (i, a)| {
@@ -178,6 +185,7 @@ fn expect_ln_p_theta(prob: &Problem) -> Result<f64, RegressionError> {
     })
 }
 
+// Expceted log probability of the parameter weight precisions
 fn expect_ln_p_alpha(prob: &Problem) -> Result<f64, RegressionError> {
     prob.alpha.iter().try_fold(0.0, |sum, a| {
         let am = a.mean();
@@ -188,6 +196,7 @@ fn expect_ln_p_alpha(prob: &Problem) -> Result<f64, RegressionError> {
     })
 }
 
+// Expected log probability of the noise precision
 fn expect_ln_p_beta(prob: &Problem) -> Result<f64, RegressionError> {
     let part1 = prob.npp.shape() * prob.npp.rate().ln();
     let part2 = (prob.npp.shape() - 1.0) * (Gamma::digamma(prob.beta.shape()) - prob.beta.rate().ln());
@@ -195,6 +204,7 @@ fn expect_ln_p_beta(prob: &Problem) -> Result<f64, RegressionError> {
     Ok(part1 + part2 - part3)
 }
 
+// Expected entropy of the parameter weights
 fn expect_ln_q_theta(prob: &Problem) -> Result<f64, RegressionError> {
     let m = prob.s.shape().0;
     let chol = Cholesky::new(prob.s.clone()).unwrap().l();
@@ -206,6 +216,7 @@ fn expect_ln_q_theta(prob: &Problem) -> Result<f64, RegressionError> {
     Ok(-(0.5 * ln_det + (m as f64 / 2.0) * (1.0 + LN_2PI)))
 }
 
+// Expected entropy of the parameter precisions
 fn expect_ln_q_alpha(prob: &Problem) -> Result<f64, RegressionError> {
     prob.alpha.iter().try_fold(0.0, |sum, a| {
         let part1 = Gamma::ln_gamma(a.shape()).0;
@@ -215,10 +226,10 @@ fn expect_ln_q_alpha(prob: &Problem) -> Result<f64, RegressionError> {
     })
 }
 
+// Expected entropy of the noise precision
 fn expect_ln_q_beta(prob: &Problem) -> Result<f64, RegressionError> {
     Ok(-(Gamma::ln_gamma(prob.beta.shape()).0 - 
     (prob.beta.shape() - 1.0) * Gamma::digamma(prob.beta.shape()) - 
     prob.beta.rate().ln() + 
     prob.beta.shape()))
 }
-

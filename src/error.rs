@@ -2,8 +2,12 @@ use std::error::Error;
 use std::fmt::{Display, Formatter, Debug};
 use std::convert::From;
 
+///
+/// Represents a regression-related error
+/// 
 #[derive(Debug)]
 pub struct RegressionError {
+    /// The error message
     pub message: String
 }
 
