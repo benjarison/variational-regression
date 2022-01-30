@@ -2,7 +2,7 @@ use nalgebra::{Cholesky, DVector, DMatrix};
 use crate::error::RegressionError;
 use special::Gamma;
 use crate::distribution::{GammaDistribution, GaussianDistribution};
-use crate::math::LN_TWO_PI;
+use crate::math::LN_2PI;
 use crate::config::TrainConfig;
 use serde::{Serialize, Deserialize};
 
@@ -161,7 +161,7 @@ fn expect_ln_p_y(prob: &Problem) -> Result<f64, RegressionError> {
     let bm = prob.beta.mean();
     let tc = &prob.theta * prob.theta.transpose();
     let part1 = prob.xty.len() as f64 * 0.5;
-    let part2 = Gamma::digamma(prob.beta.shape()) - prob.beta.rate().ln() - LN_TWO_PI;
+    let part2 = Gamma::digamma(prob.beta.shape()) - prob.beta.rate().ln() - LN_2PI;
     let part3 = (bm * 0.5) * prob.yty;
     let part4 = bm * prob.theta.dot(&prob.xty);
     let part5 = (bm * 0.5) * (&prob.xtx * (tc + &prob.s)).trace();
@@ -169,7 +169,7 @@ fn expect_ln_p_y(prob: &Problem) -> Result<f64, RegressionError> {
 }
 
 fn expect_ln_p_theta(prob: &Problem) -> Result<f64, RegressionError> {
-    let init = (prob.theta.len() as f64 * -0.5) * LN_TWO_PI;
+    let init = (prob.theta.len() as f64 * -0.5) * LN_2PI;
     prob.alpha.iter().enumerate().try_fold(init, |sum, (i, a)| {
         let am = a.mean();
         let part1 = Gamma::digamma(a.shape()) - a.rate().ln();
@@ -203,7 +203,7 @@ fn expect_ln_q_theta(prob: &Problem) -> Result<f64, RegressionError> {
         ln_det += chol[(i, i)].ln();
     }
     ln_det *= 2.0;
-    Ok(-(0.5 * ln_det + (m as f64 / 2.0) * (1.0 + LN_TWO_PI)))
+    Ok(-(0.5 * ln_det + (m as f64 / 2.0) * (1.0 + LN_2PI)))
 }
 
 fn expect_ln_q_alpha(prob: &Problem) -> Result<f64, RegressionError> {
