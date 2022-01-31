@@ -47,7 +47,9 @@ impl VariationalLinearRegression {
             q_alpha(&mut problem)?; // weight precisions
             q_beta(&mut problem)?; // noise precision
             let new_bound = lower_bound(&problem)?;
-            println!("Iteration {}, Lower Bound = {}", iter + 1, new_bound);
+            if config.verbose {
+                println!("Iteration {}, Lower Bound = {}", iter + 1, new_bound);
+            }
             if (new_bound - problem.bound) / problem.bound.abs() <= config.tolerance {
                 return Ok(VariationalLinearRegression {
                     weights: problem.theta, covariance: problem.s, noise_precision: problem.beta
