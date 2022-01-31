@@ -13,12 +13,12 @@ type DenseMatrix = DMatrix<f64>;
 ///
 /// Represents a linear regression model trained via variational inference
 /// 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VariationalLinearRegression {
     /// Learned model weights
-    pub weights: DenseVector,
+    weights: DenseVector,
     /// Feature covariance matrix
-    pub covariance: DenseMatrix,
+    covariance: DenseMatrix,
     /// Noise precision distribution
     pub noise_precision: GammaDistribution
 }
@@ -74,6 +74,10 @@ impl VariationalLinearRegression {
         let pred_mean = x.dot(&self.weights);
         let pred_var = (1.0 / npm) + (&self.covariance * &x).dot(&x);
         GaussianDistribution::new(pred_mean, pred_var)
+    }
+
+    pub fn weights(&self) -> &Vec<f64> {
+        self.weights.data.as_vec()
     }
 }
 
@@ -232,4 +236,52 @@ fn expect_ln_q_beta(prob: &Problem) -> Result<f64, RegressionError> {
     (prob.beta.shape() - 1.0) * Gamma::digamma(prob.beta.shape()) - 
     prob.beta.rate().ln() + 
     prob.beta.shape()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::TrainConfig;
+    use assert_approx_eq::assert_approx_eq;
+
+    const FEATURES: [[f64; 4]; 10] = [
+        [-0.2, -0.9, -0.5, 0.3],
+        [0.6, 0.3, 0.3, -0.4],
+        [0.9, -0.4, -0.5, -0.6],
+        [-0.7, 0.8, 0.3, -0.3],
+        [-0.5, -0.7, -0.1, 0.8],
+        [0.5, 0.5, 0.0, 0.1],
+        [0.1, -0.0, 0.0, -0.2],
+        [0.4, 0.0, 0.2, 0.0],
+        [-0.2, 0.9, -0.1, -0.9],
+        [0.1, 0.4, -0.5, 0.9],
+    ];
+
+    const LABELS: [f64; 10] = [
+        -0.4, 0.1, -0.8, 0.5, 0.6, -0.2, 0.0, 0.7, -0.3, 0.2
+    ];
+
+    #[test]
+    fn test_train() {
+        let x = Vec::from(FEATURES.map(Vec::from));
+        let y = Vec::from(LABELS);
+        let config = TrainConfig::default();
+        let model = VariationalLinearRegression::train(x, y, config).unwrap();
+        assert_approx_eq!(model.weights()[0], 0.10288069123755168);
+        assert_approx_eq!(model.weights()[1], -0.11323826185472685);
+        assert_approx_eq!(model.weights()[2], 0.024388910019891005);
+        assert_approx_eq!(model.weights()[3], 0.9838454182808158);
+        assert_approx_eq!(model.weights()[4], 0.45727622723291955);
+    }
+
+    #[test]
+    fn test_predict() {
+        let x = Vec::from(FEATURES.map(Vec::from));
+        let y = Vec::from(LABELS);
+        let config = TrainConfig::default();
+        let model = VariationalLinearRegression::train(x, y, config).unwrap();
+        let p = model.predict(vec![0.3, 0.8, -0.1, -0.3]).unwrap();
+        assert_approx_eq!(p.mean(), -0.14714706930091104);
+        assert_approx_eq!(p.variance(), 0.08453399119704738);
+    }
 }
