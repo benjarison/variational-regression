@@ -114,3 +114,45 @@ impl GaussianDistribution {
 }
 
 
+///
+/// Represents a Bernoulli distribution
+/// 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct BernoulliDistribution {
+    /// Positive probability
+    p: f64
+}
+
+impl BernoulliDistribution {
+    
+    ///
+    /// Constructs a new distribution from the provided parameter
+    /// 
+    /// # Arguments
+    /// 
+    /// `p` - The probability of 'success'
+    /// 
+    pub fn new(p: f64) -> Result<BernoulliDistribution, RegressionError> {
+        if p >= 0.0 && p <= 1.0 {
+            Ok(BernoulliDistribution {p})
+        } else {
+            Err(RegressionError::from(format!("Invalid parameter 'p': {}", p)))
+        }
+    }
+
+    ///
+    /// Computes the mean of the distribution
+    /// 
+    #[inline]
+    pub fn mean(&self) -> f64 {
+        self.p
+    }
+
+    ///
+    /// Computes the variance of the distribution
+    /// 
+    #[inline]
+    pub fn variance(&self) -> f64 {
+        self.p * (1.0 - self.p)
+    }
+}
