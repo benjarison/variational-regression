@@ -1,4 +1,4 @@
-use crate::error::RegressionError;
+use crate::error::{RegressionError::InvalidDistribution, RegressionError};
 use serde::{Serialize, Deserialize};
 
 
@@ -25,9 +25,9 @@ impl GammaDistribution {
     /// 
     pub fn new(shape: f64, rate: f64) -> Result<GammaDistribution, RegressionError> {
         if shape <= 0.0 {
-            Err(RegressionError::from("Shape parameter must be positive"))
+            Err(InvalidDistribution(format!("Shape parameter must be positive (found {})", shape)))
         } else if rate <= 0.0 {
-            Err(RegressionError::from("Rate parameter must be positive"))
+            Err(InvalidDistribution(format!("Rate parameter must be positive (found {})", rate)))
         } else {
             Ok(GammaDistribution {shape, rate})
         }
@@ -90,7 +90,7 @@ impl GaussianDistribution {
     /// 
     pub fn new(mean: f64, variance: f64) -> Result<GaussianDistribution, RegressionError> {
         if variance <= 0.0 {
-            Err(RegressionError::from("Variance must be positive"))
+            Err(InvalidDistribution(format!("Variance must be positive (found {})", variance)))
         }  else {
             Ok(GaussianDistribution {mean, variance})
         }
@@ -136,7 +136,7 @@ impl BernoulliDistribution {
         if p >= 0.0 && p <= 1.0 {
             Ok(BernoulliDistribution {p})
         } else {
-            Err(RegressionError::from(format!("Invalid parameter 'p': {}", p)))
+            Err(InvalidDistribution(format!("Invalid parameter 'p': {}", p)))
         }
     }
 

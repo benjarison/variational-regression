@@ -3,12 +3,39 @@ use crate::error::RegressionError;
 use special::Gamma;
 use crate::distribution::{GammaDistribution, GaussianDistribution};
 use crate::math::LN_2PI;
-use crate::config::TrainConfig;
 use serde::{Serialize, Deserialize};
 
 type DenseVector = DVector<f64>;
 type DenseMatrix = DMatrix<f64>;
 
+///
+/// Specifies configurable hyperparameters for training a 
+/// variational linear regression model
+/// 
+pub struct TrainConfig {
+    /// Prior distribution over the precision of the model weights
+    pub weight_precision_prior: GammaDistribution,
+    /// Prior distribution over the precision of the noise term
+    pub noise_precision_prior: GammaDistribution,
+    /// Maximum number of training iterations
+    pub max_iter: usize,
+    /// Convergence criteria threshold
+    pub tolerance: f64,
+    /// Indicates whether or not to print training info
+    pub verbose: bool
+}
+
+impl Default for TrainConfig {
+    fn default() -> Self {
+        TrainConfig {
+            weight_precision_prior: GammaDistribution::new(1e-4, 1e-4).unwrap(),
+            noise_precision_prior: GammaDistribution::new(1e-4, 1e-4).unwrap(),
+            max_iter: 1000, 
+            tolerance: 1e-4,
+            verbose: true
+        }
+    }
+}
 
 ///
 /// Represents a linear regression model trained via variational inference
@@ -59,8 +86,7 @@ impl VariationalLinearRegression {
             }
         }
         // admit defeat
-        let message = format!("Model failed to converge in {} iterations", config.max_iter);
-        Err(RegressionError::from(message))
+        Err(RegressionError::ConvergenceFailure(config.max_iter))
     }
 
     ///
@@ -133,7 +159,7 @@ fn q_theta(prob: &mut Problem) -> Result<(), RegressionError> {
         s_inv[(i, i)] += a;
     }
     prob.s = Cholesky::new(s_inv)
-        .ok_or(RegressionError::from("cholesky error"))?
+        .ok_or(RegressionError::CholeskyFailure)?
         .inverse();
     prob.theta = (&prob.s * prob.beta.mean()) * &prob.xty;
     Ok(())
@@ -213,7 +239,9 @@ fn expect_ln_p_beta(prob: &Problem) -> Result<f64, RegressionError> {
 // Expected entropy of the parameter weights
 fn expect_ln_q_theta(prob: &Problem) -> Result<f64, RegressionError> {
     let m = prob.s.shape().0;
-    let chol = Cholesky::new(prob.s.clone()).unwrap().l();
+    let chol = Cholesky::new(prob.s.clone())
+    .ok_or(RegressionError::CholeskyFailure)?
+    .l();
     let mut ln_det = 0.0;
     for i in 0..prob.s.ncols() {
         ln_det += chol[(i, i)].ln();
@@ -243,7 +271,6 @@ fn expect_ln_q_beta(prob: &Problem) -> Result<f64, RegressionError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::TrainConfig;
     use assert_approx_eq::assert_approx_eq;
 
     const FEATURES: [[f64; 4]; 10] = [

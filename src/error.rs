@@ -1,34 +1,24 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter, Debug};
-use std::convert::From;
 
 ///
 /// Represents a regression-related error
 /// 
 #[derive(Debug)]
-pub struct RegressionError {
-    /// The error message
-    pub message: String
+pub enum RegressionError {
+    CholeskyFailure,
+    ConvergenceFailure(usize),
+    InvalidDistribution(String)
 }
 
 impl Display for RegressionError {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
-impl Error for RegressionError {}
-
-impl From<&str> for RegressionError {
-    fn from(msg: &str) -> RegressionError {
-        RegressionError {
-            message: String::from(msg)
+        match self {
+            Self::CholeskyFailure => write!(f, "Cholesky Decomposition Failure"),
+            Self::ConvergenceFailure(iter) => write!(f, "{}", format!("Failed to converge in {} iterations", iter)),
+            Self::InvalidDistribution(msg) => write!(f, "{}", msg)
         }
     }
 }
 
-impl From<String> for RegressionError {
-    fn from(msg: String) -> RegressionError {
-        RegressionError {message: msg}
-    }
-}
+impl Error for RegressionError {}
