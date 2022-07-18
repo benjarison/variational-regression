@@ -17,6 +17,8 @@ pub struct TrainConfig {
     pub weight_precision_prior: GammaDistribution,
     /// Prior distribution over the precision of the noise term
     pub noise_precision_prior: GammaDistribution,
+    /// Whether or not to include a bias term
+    pub bias: bool,
     /// Maximum number of training iterations
     pub max_iter: usize,
     /// Convergence criteria threshold
@@ -30,6 +32,7 @@ impl Default for TrainConfig {
         TrainConfig {
             weight_precision_prior: GammaDistribution::new(1e-4, 1e-4).unwrap(),
             noise_precision_prior: GammaDistribution::new(1e-4, 1e-4).unwrap(),
+            bias: true,
             max_iter: 1000, 
             tolerance: 1e-4,
             verbose: true
@@ -47,7 +50,9 @@ pub struct VariationalLinearRegression {
     /// Feature covariance matrix
     covariance: DenseMatrix,
     /// Noise precision distribution
-    pub noise_precision: GammaDistribution
+    pub noise_precision: GammaDistribution,
+    /// Whether or not the model uses a bias term
+    pub bias: bool
 }
 
 impl VariationalLinearRegression {
@@ -62,12 +67,12 @@ impl VariationalLinearRegression {
     /// `config` - The training configuration
     /// 
     pub fn train(
-        features: Vec<Vec<f64>>,
-        labels: Vec<f64>,
-        config: TrainConfig
+        features: &Vec<Vec<f64>>,
+        labels: &Vec<f64>,
+        config: &TrainConfig
     ) -> Result<VariationalLinearRegression, RegressionError> {
         // precompute required values
-        let mut problem = Problem::new(features, labels, &config);
+        let mut problem = Problem::new(features, labels, config);
         // optimize the variational lower bound until convergence
         for iter in 0..config.max_iter {
             q_theta(&mut problem)?; // model parameters
@@ -79,7 +84,10 @@ impl VariationalLinearRegression {
             }
             if (new_bound - problem.bound) / problem.bound.abs() <= config.tolerance {
                 return Ok(VariationalLinearRegression {
-                    weights: problem.theta, covariance: problem.s, noise_precision: problem.beta
+                    weights: problem.theta, 
+                    covariance: problem.s, 
+                    noise_precision: problem.beta, 
+                    bias: config.bias
                 })
             } else {
                 problem.bound = new_bound;
@@ -96,16 +104,33 @@ impl VariationalLinearRegression {
     /// 
     /// `features` - The vector of feature values
     /// 
-    pub fn predict(&self, features: Vec<f64>) -> Result<GaussianDistribution, RegressionError> {
-        let x = DenseVector::from_vec(features).insert_row(0, 1.0);
+    pub fn predict(&self, features: &Vec<f64>) -> Result<GaussianDistribution, RegressionError> {
+        let x = self.design(features);
         let npm = self.noise_precision.mean();
         let pred_mean = x.dot(&self.weights);
         let pred_var = (1.0 / npm) + (&self.covariance * &x).dot(&x);
         GaussianDistribution::new(pred_mean, pred_var)
     }
 
+    ///
+    /// Provides the trained model weights
+    /// 
     pub fn weights(&self) -> &Vec<f64> {
         self.weights.data.as_vec()
+    }
+
+    // construct the design matrix for prediction
+    fn design(&self, features: &Vec<f64>) -> DenseVector {
+        let d = self.weights.len();
+        let mut x = DenseVector::zeros(d);
+        let offset = if self.bias { 1 } else { 0 };
+        if self.bias {
+            x[0] = 1.0;
+        }
+        for j in offset..d {
+            x[j] = features[j - offset];
+        }
+        return x;
     }
 }
 
@@ -127,16 +152,12 @@ struct Problem {
 
 impl Problem {
     fn new(
-        features: Vec<Vec<f64>>,
-        labels: Vec<f64>,
+        features: &Vec<Vec<f64>>,
+        labels: &Vec<f64>,
         config: &TrainConfig
     ) -> Problem {
-        let n = features.len();
-        let d = features[0].len() + 1;
-        let x = DenseMatrix::from_row_slice(
-            n, d - 1, features.into_iter().flatten().collect::<Vec<f64>>().as_slice()
-        ).insert_column(0, 1.0);
-        let y = DenseVector::from_vec(labels);
+        let (x, n, d) = Self::design(features, config.bias);
+        let y = DenseVector::from_vec(labels.clone());
         let xtx = x.tr_mul(&x);
         let xty = x.tr_mul(&y);
         let yty = y.dot(&y);
@@ -148,6 +169,23 @@ impl Problem {
         let theta = DenseVector::zeros(d);
         let s = DenseMatrix::zeros(d, d);
         Problem {xtx, xty, yty, theta, s, alpha, beta, wpp, npp, n, d, bound}
+    }
+
+    // construct the design matrix
+    fn design(features: &Vec<Vec<f64>>, bias: bool) -> (DenseMatrix, usize, usize) {
+        let offset = if bias { 1 } else { 0 };
+        let n = features.len();
+        let d = features[0].len() + offset;
+        let mut x = DenseMatrix::zeros(n, d);
+        for i in 0..n {
+            if bias {
+                x[(i, 0)] = 1.0;
+            }
+            for j in offset..d {
+                x[(i, j)] = features[i][j - offset];
+            }
+        }
+        (x, n, d)
     }
 }
 
@@ -295,7 +333,7 @@ mod tests {
         let x = Vec::from(FEATURES.map(Vec::from));
         let y = Vec::from(LABELS);
         let config = TrainConfig::default();
-        let model = VariationalLinearRegression::train(x, y, config).unwrap();
+        let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
         assert_approx_eq!(model.weights()[0], 0.10288069123755168);
         assert_approx_eq!(model.weights()[1], -0.11323826185472685);
         assert_approx_eq!(model.weights()[2], 0.024388910019891005);
@@ -308,8 +346,8 @@ mod tests {
         let x = Vec::from(FEATURES.map(Vec::from));
         let y = Vec::from(LABELS);
         let config = TrainConfig::default();
-        let model = VariationalLinearRegression::train(x, y, config).unwrap();
-        let p = model.predict(vec![0.3, 0.8, -0.1, -0.3]).unwrap();
+        let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
+        let p = model.predict(&vec![0.3, 0.8, -0.1, -0.3]).unwrap();
         assert_approx_eq!(p.mean(), -0.14714706930091104);
         assert_approx_eq!(p.variance(), 0.08453399119704738);
     }
