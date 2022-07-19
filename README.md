@@ -12,7 +12,7 @@ The model is specified as follows:
 
 p(<b>y</b> | <b>&theta;</b>) = &prod; N(y<sub>i</sub> | <b>&theta;</b><sup>T</sup><b>x</b><sub>i</sub>, &beta;<sup>-1</sup>)
 
-p(<b>&theta;</b> | <b>&alpha;</b>) = &prod; N(&theta;<sub>j</sub> | <b>0</b>, <b>&alpha;</b><sub>j</sub><sup>-1</sup> <b>I</b>)
+p(<b>&theta;</b> | <b>&alpha;</b>) = &prod; N(&theta;<sub>j</sub> | 0, &alpha;<sub>j</sub><sup>-1</sup>)
 
 p(<b>&alpha;</b>) = &prod; Gam(&alpha;<sub>j</sub> | a<sub>0</sub>, b<sub>0</sub>)
 
@@ -32,7 +32,25 @@ with the given notation:
 
 ## Logistic Regression
 
-TODO
+The model is specified as follows:
+
+p(<b>y</b> | <b>&theta;</b>) = &prod; &sigma;(<b>&theta;</b><sup>T</sup><b>x</b><sub>i</sub>)<sup>y<sub>i</sub></sup> {1 - &sigma;(<b>&theta;</b><sup>T</sup><b>x</b><sub>i</sub>)}<sup>1-y<sub>i</sub></sup>
+
+p(<b>&theta;</b> | <b>&alpha;</b>) = &prod; N(&theta;<sub>j</sub> | 0, &alpha;<sub>j</sub><sup>-1</sup>)
+
+p(<b>&alpha;</b>) = &prod; Gam(&alpha;<sub>j</sub> | a<sub>0</sub>, b<sub>0</sub>)
+
+with the given notation:
+
+<b>y</b> = labels
+
+<b>x</b> = features
+
+<b>&theta;</b> = model weights
+
+<b>&alpha;</b> = weight precision (inverse variance)
+
+&sigma; = logistic sigmoid function
 
 ## Reference
 
@@ -41,8 +59,7 @@ The models implemented here are heavily based on those presented in Chapter 10 o
 ## Examples
 
 ```rust
-use variational_regression::config::TrainConfig;
-use variational_regression::linear::VariationalLinearRegression;
+use variational_regression::linear::{VariationalLinearRegression, TrainConfig};
 use variational_regression::error::RegressionError;
 
 fn main() -> Result<(), RegressionError> {
@@ -66,7 +83,7 @@ fn main() -> Result<(), RegressionError> {
     
     // configure and train model
     let config = TrainConfig::default();
-    let model = VariationalLinearRegression::train(features, labels, config)?;
+    let model = VariationalLinearRegression::train(&features, &labels, &config)?;
     
     // inspect model weights
     for (ind, weight) in model.weights().iter().enumerate() {
@@ -77,11 +94,49 @@ fn main() -> Result<(), RegressionError> {
     println!("Noise Variance: {}", 1.0 / model.noise_precision.mean());
     
     // get predictive distribution
-    let prediction = model.predict(vec![0.1, -0.5, 0.3, 0.9])?;
+    let prediction = model.predict(&vec![0.1, -0.5, 0.3, 0.9])?;
     println!("Predictive mean: {}", prediction.mean());
     
     Ok(())
 }
+```
 
+```rust
+use variational_regression::logistic::{VariationalLogisticRegression, TrainConfig};
+use variational_regression::error::RegressionError;
 
+fn main() -> Result<(), RegressionError> {
+
+    // construct features
+    let features = vec![
+        vec![-0.2, -0.9, -0.5, 0.3],
+        vec![0.6, 0.3, 0.3, -0.4],
+        vec![0.9, -0.4, -0.5, -0.6],
+        vec![-0.7, 0.8, 0.3, -0.3],
+        vec![-0.5, -0.7, -0.1, 0.8],
+        vec![0.5, 0.5, 0.0, 0.1],
+        vec![0.1, -0.0, 0.0, -0.2],
+        vec![0.4, 0.0, 0.2, 0.0],
+        vec![-0.2, 0.9, -0.1, -0.9],
+        vec![0.1, 0.4, -0.5, 0.9],
+    ];
+    
+    // construct labels
+    let labels = vec![true, false, true, false, true, false, true, false, true, false];
+    
+    // configure and train model
+    let config = TrainConfig::default();
+    let model = VariationalLogisticRegression::train(&features, &labels, &config)?;
+    
+    // inspect model weights
+    for (ind, weight) in model.weights().iter().enumerate() {
+        println!("Weight {}: {}", ind + 1, weight);
+    }
+
+    // get predictive distribution
+    let prediction = model.predict(&vec![0.1, -0.5, 0.3, 0.9])?;
+    println!("Predictive mean: {}", prediction.mean());
+    
+    Ok(())
+}
 ```
