@@ -15,6 +15,7 @@ type DenseMatrix = DMatrix<f64>;
 /// Specifies configurable hyperparameters for training a 
 /// variational linear regression model
 /// 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrainConfig {
     /// Prior distribution over the precision of the model weights
     pub weight_precision_prior: GammaDistribution,
