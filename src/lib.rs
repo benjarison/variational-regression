@@ -1,5 +1,6 @@
 pub mod distribution;
 pub mod error;
 pub mod linear;
-pub mod math;
-
+pub mod logistic;
+mod math;
+mod util;

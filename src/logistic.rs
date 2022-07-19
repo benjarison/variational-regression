@@ -2,13 +2,14 @@ use nalgebra::{Cholesky, DVector, DMatrix};
 use special::Gamma;
 use serde::{Serialize, Deserialize};
 
+use crate::distribution::{GammaDistribution, BernoulliDistribution};
 use crate::error::RegressionError;
-use crate::distribution::{GammaDistribution, GaussianDistribution};
-use crate::math::LN_2PI;
-use crate::util::{design_matrix, design_vector};
+use crate::math::{LN_2PI, logistic};
+use crate::util::{design_matrix, design_vector, trace_of_product};
 
 type DenseVector = DVector<f64>;
 type DenseMatrix = DMatrix<f64>;
+
 
 ///
 /// Specifies configurable hyperparameters for training a 
@@ -17,8 +18,6 @@ type DenseMatrix = DMatrix<f64>;
 pub struct TrainConfig {
     /// Prior distribution over the precision of the model weights
     pub weight_precision_prior: GammaDistribution,
-    /// Prior distribution over the precision of the noise term
-    pub noise_precision_prior: GammaDistribution,
     /// Whether or not to include a bias term
     pub bias: bool,
     /// Maximum number of training iterations
@@ -33,7 +32,6 @@ impl Default for TrainConfig {
     fn default() -> Self {
         TrainConfig {
             weight_precision_prior: GammaDistribution::new(1e-4, 1e-4).unwrap(),
-            noise_precision_prior: GammaDistribution::new(1e-4, 1e-4).unwrap(),
             bias: true,
             max_iter: 1000, 
             tolerance: 1e-4,
@@ -43,21 +41,19 @@ impl Default for TrainConfig {
 }
 
 ///
-/// Represents a linear regression model trained via variational inference
+/// Represents a logistic regression model trained via variational inference
 /// 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VariationalLinearRegression {
+pub struct VariationalLogisticRegression {
     /// Learned model weights
     weights: DenseVector,
     /// Feature covariance matrix
     covariance: DenseMatrix,
-    /// Noise precision distribution
-    pub noise_precision: GammaDistribution,
     /// Whether or not the model uses a bias term
     pub bias: bool
 }
 
-impl VariationalLinearRegression {
+impl VariationalLogisticRegression {
 
     ///
     /// Trains the model on the provided data
@@ -70,25 +66,24 @@ impl VariationalLinearRegression {
     /// 
     pub fn train(
         features: &Vec<Vec<f64>>,
-        labels: &Vec<f64>,
+        labels: &Vec<bool>,
         config: &TrainConfig
-    ) -> Result<VariationalLinearRegression, RegressionError> {
+    ) -> Result<VariationalLogisticRegression, RegressionError> {
         // precompute required values
         let mut problem = Problem::new(features, labels, config);
         // optimize the variational lower bound until convergence
         for iter in 0..config.max_iter {
             q_theta(&mut problem)?; // model parameters
             q_alpha(&mut problem)?; // weight precisions
-            q_beta(&mut problem)?; // noise precision
+            update_zeta(&mut problem)?; // noise precision
             let new_bound = lower_bound(&problem)?;
             if config.verbose {
                 println!("Iteration {}, Lower Bound = {}", iter + 1, new_bound);
             }
             if (new_bound - problem.bound) / problem.bound.abs() <= config.tolerance {
-                return Ok(VariationalLinearRegression {
+                return Ok(VariationalLogisticRegression {
                     weights: problem.theta, 
-                    covariance: problem.s, 
-                    noise_precision: problem.beta, 
+                    covariance: problem.s,
                     bias: config.bias
                 })
             } else {
@@ -106,12 +101,10 @@ impl VariationalLinearRegression {
     /// 
     /// `features` - The vector of feature values
     /// 
-    pub fn predict(&self, features: &Vec<f64>) -> Result<GaussianDistribution, RegressionError> {
+    pub fn predict(&self, features: &Vec<f64>) -> Result<BernoulliDistribution, RegressionError> {
         let x = design_vector(features, self.bias);
-        let npm = self.noise_precision.mean();
-        let pred_mean = x.dot(&self.weights);
-        let pred_var = (1.0 / npm) + (&self.covariance * &x).dot(&x);
-        GaussianDistribution::new(pred_mean, pred_var)
+        let p = logistic(x.dot(&self.weights));
+        BernoulliDistribution::new(p)
     }
 
     ///
@@ -124,15 +117,14 @@ impl VariationalLinearRegression {
 
 // Defines the regression problem
 struct Problem {
-    pub xtx: DenseMatrix,
-    pub xty: DenseVector,
-    pub yty: f64,
+    pub x: DenseMatrix,
+    pub y: DenseVector,
+    pub sxy: DenseVector,
     pub theta: DenseVector,
     pub s: DenseMatrix,
     pub alpha: Vec<GammaDistribution>,
-    pub beta: GammaDistribution,
+    pub zeta: DenseVector,
     pub wpp: GammaDistribution,
-    pub npp: GammaDistribution,
     pub n: usize,
     pub d: usize,
     pub bound: f64
@@ -141,38 +133,50 @@ struct Problem {
 impl Problem {
     fn new(
         features: &Vec<Vec<f64>>,
-        labels: &Vec<f64>,
+        labels: &Vec<bool>,
         config: &TrainConfig
     ) -> Problem {
         let x = design_matrix(features, config.bias);
         let n = x.nrows();
         let d = x.ncols();
-        let y = DenseVector::from_vec(labels.clone());
-        let xtx = x.tr_mul(&x);
-        let xty = x.tr_mul(&y);
-        let yty = y.dot(&y);
+        let y = DenseVector::from_iterator(
+            labels.len(), 
+            labels.into_iter().map(|&lab| if lab {1.0} else {0.0})
+        );
+        let sxy = compute_sxy(&x, &y, d);
         let wpp = config.weight_precision_prior;
-        let npp = config.noise_precision_prior;
         let alpha = vec![wpp; x.ncols()];
-        let beta = npp;
+        let zeta = DenseVector::from_element(n, 1.0);
         let bound = f64::NEG_INFINITY;
         let theta = DenseVector::zeros(d);
         let s = DenseMatrix::zeros(d, d);
-        Problem {xtx, xty, yty, theta, s, alpha, beta, wpp, npp, n, d, bound}
+        Problem {x, y, sxy, theta, s, alpha, zeta, wpp, n, d, bound}
     }
+}
+
+fn compute_sxy(x: &DenseMatrix, y: &DenseVector, d: usize) -> DenseVector {
+    let mut sxy = DenseVector::zeros(d);
+    for i in 0..y.len() {
+        let t = y[i] - 0.5;
+        sxy += x.row(i).transpose() * t;
+    }
+    sxy
+}
+
+fn lambda(val: f64) -> f64 {
+    (1.0 / (2.0 * val)) * (logistic(val) - 0.5)
 }
 
 // Factorized distribution for parameter weights
 fn q_theta(prob: &mut Problem) -> Result<(), RegressionError> {
-    let mut s_inv = &prob.xtx * prob.beta.mean();
-    for i in 0..prob.d {
-        let a = prob.alpha[i].mean();
-        s_inv[(i, i)] += a;
-    }
+    let a = DenseVector::from(prob.alpha.iter().map(|alpha| alpha.mean()).collect::<Vec<f64>>());
+    let mut s_inv = DenseMatrix::from_diagonal(&a);
+    let w = prob.zeta.map(|z| lambda(z) * 2.0);
+    s_inv += prob.x.tr_mul(&scale(&prob.x, &w));
     prob.s = Cholesky::new(s_inv)
         .ok_or(RegressionError::CholeskyFailure)?
         .inverse();
-    prob.theta = (&prob.s * prob.beta.mean()) * &prob.xty;
+    prob.theta = &prob.s * &prob.sxy;
     Ok(())
 }
 
@@ -185,12 +189,12 @@ fn q_alpha(prob: &mut Problem) -> Result<(), RegressionError> {
     Ok(())
 }
 
-// Factorized distribution for noise precision
-fn q_beta(prob: &mut Problem) -> Result<(), RegressionError> {
-    let shape = prob.npp.shape() + (prob.n as f64 / 2.0);
-    let t = (&prob.xtx * (&prob.theta * prob.theta.transpose() + &prob.s)).trace();
-    let inv_scale = prob.npp.rate() + 0.5 * (prob.yty - 2.0 * prob.theta.dot(&prob.xty) + t);
-    prob.beta = GammaDistribution::new(shape, inv_scale)?;
+fn update_zeta(prob: &mut Problem) -> Result<(), RegressionError> {
+    let a = &prob.s + (&prob.theta * prob.theta.transpose());
+    let iter = prob.x.row_iter().map(|xi| {
+        ((xi * &a) * xi.transpose())[(0, 0)].sqrt()
+    });
+    prob.zeta = DenseVector::from_iterator(prob.n, iter);
     Ok(())
 }
 
@@ -198,23 +202,22 @@ fn q_beta(prob: &mut Problem) -> Result<(), RegressionError> {
 fn lower_bound(prob: &Problem) -> Result<f64, RegressionError> {
     Ok(expect_ln_p_y(prob)? +
     expect_ln_p_theta(prob)? +
-    expect_ln_p_alpha(prob)? +
-    expect_ln_p_beta(prob)? -
+    expect_ln_p_alpha(prob)? -
     expect_ln_q_theta(prob)? -
-    expect_ln_q_alpha(prob)? -
-    expect_ln_q_beta(prob)?)
+    expect_ln_q_alpha(prob)?)
 }
 
 // Expected log probability of labels conditioned on parameter weights
 fn expect_ln_p_y(prob: &Problem) -> Result<f64, RegressionError> {
-    let bm = prob.beta.mean();
-    let tc = &prob.theta * prob.theta.transpose();
-    let part1 = prob.xty.len() as f64 * 0.5;
-    let part2 = Gamma::digamma(prob.beta.shape()) - prob.beta.rate().ln() - LN_2PI;
-    let part3 = (bm * 0.5) * prob.yty;
-    let part4 = bm * prob.theta.dot(&prob.xty);
-    let part5 = (bm * 0.5) * (&prob.xtx * (tc + &prob.s)).trace();
-    Ok(part1 * part2 - part3 + part4 - part5)
+    let part1 = prob.zeta.map(lambda);
+    let part2 = prob.zeta.map(|z| logistic(z).ln()).sum();
+    let part3 = &prob.x * &prob.theta;
+    let part4 = (&part3.transpose() * prob.y.map(|y| y - 0.5)).sum();
+    let part5 = prob.zeta.sum() / 2.0;
+    let part6 = (part3.map(|v| v * v).transpose() * &part1).sum();
+    let part7 = trace_of_product(&scale(&(&prob.x * &prob.s), &part1), &prob.x.transpose());
+    let part8 = part1.component_mul(&prob.zeta.map(|z| z * z)).sum();
+    Ok(part2 + part4 - part5 - part6 - part7 + part8)
 }
 
 // Expceted log probability of parameter weights conditioned on their precisions
@@ -239,20 +242,10 @@ fn expect_ln_p_alpha(prob: &Problem) -> Result<f64, RegressionError> {
     })
 }
 
-// Expected log probability of the noise precision
-fn expect_ln_p_beta(prob: &Problem) -> Result<f64, RegressionError> {
-    let part1 = prob.npp.shape() * prob.npp.rate().ln();
-    let part2 = (prob.npp.shape() - 1.0) * (Gamma::digamma(prob.beta.shape()) - prob.beta.rate().ln());
-    let part3 = (prob.npp.rate() * prob.beta.mean()) + Gamma::ln_gamma(prob.npp.shape()).0;
-    Ok(part1 + part2 - part3)
-}
-
 // Expected entropy of the parameter weights
 fn expect_ln_q_theta(prob: &Problem) -> Result<f64, RegressionError> {
     let m = prob.s.shape().0;
-    let chol = Cholesky::new(prob.s.clone())
-    .ok_or(RegressionError::CholeskyFailure)?
-    .l();
+    let chol = Cholesky::new(prob.s.clone()).unwrap().l();
     let mut ln_det = 0.0;
     for i in 0..prob.s.ncols() {
         ln_det += chol[(i, i)].ln();
@@ -271,12 +264,14 @@ fn expect_ln_q_alpha(prob: &Problem) -> Result<f64, RegressionError> {
     })
 }
 
-// Expected entropy of the noise precision
-fn expect_ln_q_beta(prob: &Problem) -> Result<f64, RegressionError> {
-    Ok(-(Gamma::ln_gamma(prob.beta.shape()).0 - 
-    (prob.beta.shape() - 1.0) * Gamma::digamma(prob.beta.shape()) - 
-    prob.beta.rate().ln() + 
-    prob.beta.shape()))
+fn scale(matrix: &DenseMatrix, vector: &DenseVector) -> DenseMatrix {
+    let mut scaled = matrix.clone();
+    for i in 0..matrix.nrows() {
+        for j in 0..matrix.ncols() {
+            scaled[(i, j)] *= vector[i];
+        }
+    }
+    return scaled;
 }
 
 #[cfg(test)]
@@ -297,8 +292,8 @@ mod tests {
         [0.1, 0.4, -0.5, 0.9],
     ];
 
-    const LABELS: [f64; 10] = [
-        -0.4, 0.1, -0.8, 0.5, 0.6, -0.2, 0.0, 0.7, -0.3, 0.2
+    const LABELS: [bool; 10] = [
+        true, false, true, false, true, false, true, false, true, false
     ];
 
     #[test]
@@ -306,12 +301,12 @@ mod tests {
         let x = Vec::from(FEATURES.map(Vec::from));
         let y = Vec::from(LABELS);
         let config = TrainConfig::default();
-        let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
-        assert_approx_eq!(model.weights()[0], 0.10288069123755168);
-        assert_approx_eq!(model.weights()[1], -0.11323826185472685);
-        assert_approx_eq!(model.weights()[2], 0.024388910019891005);
-        assert_approx_eq!(model.weights()[3], 0.9838454182808158);
-        assert_approx_eq!(model.weights()[4], 0.45727622723291955);
+        let model = VariationalLogisticRegression::train(&x, &y, &config).unwrap();
+        assert_approx_eq!(model.weights()[0], 0.0043520654824470515);
+        assert_approx_eq!(model.weights()[1], -0.10946450049722892);
+        assert_approx_eq!(model.weights()[2], -1.6472155373009127);
+        assert_approx_eq!(model.weights()[3], -1.215877178138718);
+        assert_approx_eq!(model.weights()[4], -0.7679465673373882);
     }
 
     #[test]
@@ -319,9 +314,8 @@ mod tests {
         let x = Vec::from(FEATURES.map(Vec::from));
         let y = Vec::from(LABELS);
         let config = TrainConfig::default();
-        let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
-        let p = model.predict(&vec![0.3, 0.8, -0.1, -0.3]).unwrap();
-        assert_approx_eq!(p.mean(), -0.14714706930091104);
-        assert_approx_eq!(p.variance(), 0.08453399119704738);
+        let model = VariationalLogisticRegression::train(&x, &y, &config).unwrap();
+        let p = model.predict(&vec![0.3, 0.8, -0.1, -0.3]).unwrap().mean();
+        assert_approx_eq!(p, 0.2700659446128214);
     }
 }
