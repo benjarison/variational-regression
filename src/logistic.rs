@@ -1,3 +1,4 @@
+use std::f64::consts::PI;
 use nalgebra::{Cholesky, DVector, DMatrix};
 use special::Gamma;
 use serde::{Serialize, Deserialize};
@@ -104,7 +105,10 @@ impl VariationalLogisticRegression {
     /// 
     pub fn predict(&self, features: &Vec<f64>) -> Result<BernoulliDistribution, RegressionError> {
         let x = design_vector(features, self.bias);
-        let p = logistic(x.dot(&self.weights));
+        let mu = x.dot(&self.weights);
+        let s = (&self.covariance * &x).dot(&x);
+        let k = 1.0 / (1.0 + (PI * s) / 8.0).sqrt();
+        let p = logistic(k * mu);
         BernoulliDistribution::new(p)
     }
 
@@ -193,7 +197,7 @@ fn q_alpha(prob: &mut Problem) -> Result<(), RegressionError> {
 fn update_zeta(prob: &mut Problem) -> Result<(), RegressionError> {
     let a = &prob.s + (&prob.theta * prob.theta.transpose());
     let iter = prob.x.row_iter().map(|xi| {
-        ((xi * &a) * xi.transpose())[(0, 0)].sqrt()
+        (&xi * &a).dot(&xi).sqrt()
     });
     prob.zeta = DenseVector::from_iterator(prob.n, iter);
     Ok(())
