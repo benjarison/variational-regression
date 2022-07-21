@@ -321,6 +321,6 @@ mod tests {
         let config = TrainConfig::default();
         let model = VariationalLogisticRegression::train(&x, &y, &config).unwrap();
         let p = model.predict(&vec![0.3, 0.8, -0.1, -0.3]).unwrap().mean();
-        assert_approx_eq!(p, 0.2700659446128214);
+        assert_approx_eq!(p, 0.2956358962602995);
     }
 }

@@ -318,11 +318,11 @@ mod tests {
         let y = Vec::from(LABELS);
         let config = TrainConfig::default();
         let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
-        assert_approx_eq!(model.weights()[0], 0.10288069123755168);
-        assert_approx_eq!(model.weights()[1], -0.11323826185472685);
-        assert_approx_eq!(model.weights()[2], 0.024388910019891005);
-        assert_approx_eq!(model.weights()[3], 0.9838454182808158);
-        assert_approx_eq!(model.weights()[4], 0.45727622723291955);
+        assert_approx_eq!(model.weights()[0], 0.14022283613177447);
+        assert_approx_eq!(model.weights()[1], -0.08826080780896867);
+        assert_approx_eq!(model.weights()[2], 0.003684347234472394);
+        assert_approx_eq!(model.weights()[3], 1.1209335465339734);
+        assert_approx_eq!(model.weights()[4], 0.5137103057008632);
     }
 
     #[test]
@@ -332,7 +332,7 @@ mod tests {
         let config = TrainConfig::default();
         let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
         let p = model.predict(&vec![0.3, 0.8, -0.1, -0.3]).unwrap();
-        assert_approx_eq!(p.mean(), -0.14714706930091104);
-        assert_approx_eq!(p.variance(), 0.08453399119704738);
+        assert_approx_eq!(p.mean(), -0.1495143747869945);
+        assert_approx_eq!(p.variance(), 0.047374206616233275);
     }
 }
