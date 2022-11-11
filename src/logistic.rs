@@ -3,7 +3,7 @@ use nalgebra::{Cholesky, DVector, DMatrix};
 use special::Gamma;
 use serde::{Serialize, Deserialize};
 
-use crate::distribution::{GammaDistribution, BernoulliDistribution};
+use crate::distribution::{GammaDistribution, BernoulliDistribution, ScalarDistribution};
 use crate::error::RegressionError;
 use crate::math::{LN_2PI, logistic};
 use crate::util::{design_matrix, design_vector, trace_of_product};
@@ -188,8 +188,8 @@ fn q_theta(prob: &mut Problem) -> Result<(), RegressionError> {
 // Factorized distribution for weight precisions
 fn q_alpha(prob: &mut Problem) -> Result<(), RegressionError> {
     for i in 0..prob.d {
-        let inv_scale = prob.wpp.rate() + 0.5 * (prob.theta[i] * prob.theta[i] + prob.s[(i, i)]);
-        prob.alpha[i] = GammaDistribution::new(prob.wpp.shape() + 0.5, inv_scale)?;
+        let inv_scale = prob.wpp.rate + 0.5 * (prob.theta[i] * prob.theta[i] + prob.s[(i, i)]);
+        prob.alpha[i] = GammaDistribution::new(prob.wpp.shape + 0.5, inv_scale)?;
     }
     Ok(())
 }
@@ -230,7 +230,7 @@ fn expect_ln_p_theta(prob: &Problem) -> Result<f64, RegressionError> {
     let init = (prob.theta.len() as f64 * -0.5) * LN_2PI;
     prob.alpha.iter().enumerate().try_fold(init, |sum, (i, a)| {
         let am = a.mean();
-        let part1 = Gamma::digamma(a.shape()) - a.rate().ln();
+        let part1 = Gamma::digamma(a.shape) - a.rate.ln();
         let part2 = (prob.theta[i] * prob.theta[i] + prob.s[(i, i)]) * am;
         Ok(sum + 0.5 * (part1 - part2))
     })
@@ -240,9 +240,9 @@ fn expect_ln_p_theta(prob: &Problem) -> Result<f64, RegressionError> {
 fn expect_ln_p_alpha(prob: &Problem) -> Result<f64, RegressionError> {
     prob.alpha.iter().try_fold(0.0, |sum, a| {
         let am = a.mean();
-        let term1 = prob.wpp.shape() * prob.wpp.rate().ln();
-        let term2 = (prob.wpp.shape() - 1.0) * (Gamma::digamma(a.shape()) - a.rate().ln());
-        let term3 = (prob.wpp.rate() * am) + Gamma::ln_gamma(prob.wpp.shape()).0;
+        let term1 = prob.wpp.shape * prob.wpp.rate.ln();
+        let term2 = (prob.wpp.shape - 1.0) * (Gamma::digamma(a.shape) - a.rate.ln());
+        let term3 = (prob.wpp.rate * am) + Gamma::ln_gamma(prob.wpp.shape).0;
         Ok(sum + term1 + term2 - term3)
     })
 }
@@ -262,9 +262,9 @@ fn expect_ln_q_theta(prob: &Problem) -> Result<f64, RegressionError> {
 // Expected entropy of the parameter precisions
 fn expect_ln_q_alpha(prob: &Problem) -> Result<f64, RegressionError> {
     prob.alpha.iter().try_fold(0.0, |sum, a| {
-        let part1 = Gamma::ln_gamma(a.shape()).0;
-        let part2 = (a.shape() - 1.0) * Gamma::digamma(a.shape());
-        let part3 = a.shape() - a.rate().ln();
+        let part1 = Gamma::ln_gamma(a.shape).0;
+        let part2 = (a.shape - 1.0) * Gamma::digamma(a.shape);
+        let part3 = a.shape - a.rate.ln();
         Ok(sum - (part1 - part2 + part3))
     })
 }

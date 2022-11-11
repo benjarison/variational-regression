@@ -3,7 +3,7 @@ use special::Gamma;
 use serde::{Serialize, Deserialize};
 
 use crate::error::RegressionError;
-use crate::distribution::{GammaDistribution, GaussianDistribution};
+use crate::distribution::{GammaDistribution, GaussianDistribution, ScalarDistribution};
 use crate::math::LN_2PI;
 use crate::util::{design_matrix, design_vector};
 
@@ -180,17 +180,17 @@ fn q_theta(prob: &mut Problem) -> Result<(), RegressionError> {
 // Factorized distribution for weight precisions
 fn q_alpha(prob: &mut Problem) -> Result<(), RegressionError> {
     for i in 0..prob.d {
-        let inv_scale = prob.wpp.rate() + 0.5 * (prob.theta[i] * prob.theta[i] + prob.s[(i, i)]);
-        prob.alpha[i] = GammaDistribution::new(prob.wpp.shape() + 0.5, inv_scale)?;
+        let inv_scale = prob.wpp.rate + 0.5 * (prob.theta[i] * prob.theta[i] + prob.s[(i, i)]);
+        prob.alpha[i] = GammaDistribution::new(prob.wpp.shape + 0.5, inv_scale)?;
     }
     Ok(())
 }
 
 // Factorized distribution for noise precision
 fn q_beta(prob: &mut Problem) -> Result<(), RegressionError> {
-    let shape = prob.npp.shape() + (prob.n as f64 / 2.0);
+    let shape = prob.npp.shape + (prob.n as f64 / 2.0);
     let t = (&prob.xtx * (&prob.theta * prob.theta.transpose() + &prob.s)).trace();
-    let inv_scale = prob.npp.rate() + 0.5 * (prob.yty - 2.0 * prob.theta.dot(&prob.xty) + t);
+    let inv_scale = prob.npp.rate + 0.5 * (prob.yty - 2.0 * prob.theta.dot(&prob.xty) + t);
     prob.beta = GammaDistribution::new(shape, inv_scale)?;
     Ok(())
 }
@@ -221,7 +221,7 @@ fn expect_ln_p_y(prob: &Problem) -> Result<f64, RegressionError> {
     let bm = prob.beta.mean();
     let tc = &prob.theta * prob.theta.transpose();
     let part1 = prob.xty.len() as f64 * 0.5;
-    let part2 = Gamma::digamma(prob.beta.shape()) - prob.beta.rate().ln() - LN_2PI;
+    let part2 = Gamma::digamma(prob.beta.shape) - prob.beta.rate.ln() - LN_2PI;
     let part3 = (bm * 0.5) * prob.yty;
     let part4 = bm * prob.theta.dot(&prob.xty);
     let part5 = (bm * 0.5) * (&prob.xtx * (tc + &prob.s)).trace();
@@ -233,7 +233,7 @@ fn expect_ln_p_theta(prob: &Problem) -> Result<f64, RegressionError> {
     let init = (prob.theta.len() as f64 * -0.5) * LN_2PI;
     prob.alpha.iter().enumerate().try_fold(init, |sum, (i, a)| {
         let am = a.mean();
-        let part1 = Gamma::digamma(a.shape()) - a.rate().ln();
+        let part1 = Gamma::digamma(a.shape) - a.rate.ln();
         let part2 = (prob.theta[i] * prob.theta[i] + prob.s[(i, i)]) * am;
         Ok(sum + 0.5 * (part1 - part2))
     })
@@ -243,18 +243,18 @@ fn expect_ln_p_theta(prob: &Problem) -> Result<f64, RegressionError> {
 fn expect_ln_p_alpha(prob: &Problem) -> Result<f64, RegressionError> {
     prob.alpha.iter().try_fold(0.0, |sum, a| {
         let am = a.mean();
-        let term1 = prob.wpp.shape() * prob.wpp.rate().ln();
-        let term2 = (prob.wpp.shape() - 1.0) * (Gamma::digamma(a.shape()) - a.rate().ln());
-        let term3 = (prob.wpp.rate() * am) + Gamma::ln_gamma(prob.wpp.shape()).0;
+        let term1 = prob.wpp.shape * prob.wpp.rate.ln();
+        let term2 = (prob.wpp.shape - 1.0) * (Gamma::digamma(a.shape) - a.rate.ln());
+        let term3 = (prob.wpp.rate * am) + Gamma::ln_gamma(prob.wpp.shape).0;
         Ok(sum + term1 + term2 - term3)
     })
 }
 
 // Expected log probability of the noise precision
 fn expect_ln_p_beta(prob: &Problem) -> Result<f64, RegressionError> {
-    let part1 = prob.npp.shape() * prob.npp.rate().ln();
-    let part2 = (prob.npp.shape() - 1.0) * (Gamma::digamma(prob.beta.shape()) - prob.beta.rate().ln());
-    let part3 = (prob.npp.rate() * prob.beta.mean()) + Gamma::ln_gamma(prob.npp.shape()).0;
+    let part1 = prob.npp.shape * prob.npp.rate.ln();
+    let part2 = (prob.npp.shape - 1.0) * (Gamma::digamma(prob.beta.shape) - prob.beta.rate.ln());
+    let part3 = (prob.npp.rate * prob.beta.mean()) + Gamma::ln_gamma(prob.npp.shape).0;
     Ok(part1 + part2 - part3)
 }
 
@@ -275,19 +275,19 @@ fn expect_ln_q_theta(prob: &Problem) -> Result<f64, RegressionError> {
 // Expected entropy of the parameter precisions
 fn expect_ln_q_alpha(prob: &Problem) -> Result<f64, RegressionError> {
     prob.alpha.iter().try_fold(0.0, |sum, a| {
-        let part1 = Gamma::ln_gamma(a.shape()).0;
-        let part2 = (a.shape() - 1.0) * Gamma::digamma(a.shape());
-        let part3 = a.shape() - a.rate().ln();
+        let part1 = Gamma::ln_gamma(a.shape).0;
+        let part2 = (a.shape - 1.0) * Gamma::digamma(a.shape);
+        let part3 = a.shape - a.rate.ln();
         Ok(sum - (part1 - part2 + part3))
     })
 }
 
 // Expected entropy of the noise precision
 fn expect_ln_q_beta(prob: &Problem) -> Result<f64, RegressionError> {
-    Ok(-(Gamma::ln_gamma(prob.beta.shape()).0 - 
-    (prob.beta.shape() - 1.0) * Gamma::digamma(prob.beta.shape()) - 
-    prob.beta.rate().ln() + 
-    prob.beta.shape()))
+    Ok(-(Gamma::ln_gamma(prob.beta.shape).0 - 
+    (prob.beta.shape - 1.0) * Gamma::digamma(prob.beta.shape) - 
+    prob.beta.rate.ln() + 
+    prob.beta.shape))
 }
 
 #[cfg(test)]
