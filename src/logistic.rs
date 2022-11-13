@@ -52,7 +52,9 @@ pub struct VariationalLogisticRegression {
     /// Feature covariance matrix
     covariance: DenseMatrix,
     /// Whether or not the model uses a bias term
-    pub bias: bool
+    pub bias: bool,
+    /// Variational lower bound
+    pub bound: f64
 }
 
 impl VariationalLogisticRegression {
@@ -86,7 +88,8 @@ impl VariationalLogisticRegression {
                 return Ok(VariationalLogisticRegression {
                     weights: problem.theta, 
                     covariance: problem.s,
-                    bias: config.bias
+                    bias: config.bias,
+                    bound: new_bound
                 })
             } else {
                 problem.bound = new_bound;

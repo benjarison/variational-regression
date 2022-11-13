@@ -55,7 +55,9 @@ pub struct VariationalLinearRegression {
     /// Noise precision distribution
     pub noise_precision: GammaDistribution,
     /// Whether or not the model uses a bias term
-    pub bias: bool
+    pub bias: bool,
+    /// Variational lower bound
+    pub bound: f64
 }
 
 impl VariationalLinearRegression {
@@ -90,7 +92,8 @@ impl VariationalLinearRegression {
                     weights: problem.theta, 
                     covariance: problem.s, 
                     noise_precision: problem.beta, 
-                    bias: config.bias
+                    bias: config.bias,
+                    bound: new_bound
                 })
             } else {
                 problem.bound = new_bound;
