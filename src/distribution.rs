@@ -1,6 +1,9 @@
 use crate::error::{RegressionError::InvalidDistribution, RegressionError};
 use serde::{Serialize, Deserialize};
 
+///
+/// Represents a generic scalar distribution
+/// 
 pub trait ScalarDistribution {
 
     ///
@@ -99,7 +102,6 @@ impl GaussianDistribution {
             Ok(GaussianDistribution { mean, variance })
         }
     }
-
 }
 
 impl ScalarDistribution for GaussianDistribution {
