@@ -200,23 +200,13 @@ fn q_beta(prob: &mut Problem) -> Result<(), RegressionError> {
 
 // Variational lower bound given current model parameters
 fn lower_bound(prob: &Problem) -> Result<f64, RegressionError> {
-    // Ok(expect_ln_p_y(prob)? +
-    // expect_ln_p_theta(prob)? +
-    // expect_ln_p_alpha(prob)? +
-    // expect_ln_p_beta(prob)? -
-    // expect_ln_q_theta(prob)? -
-    // expect_ln_q_alpha(prob)? -
-    // expect_ln_q_beta(prob)?)
-
-    let a = expect_ln_p_y(prob)?;
-    let b = expect_ln_p_theta(prob)?;
-    let c = expect_ln_p_alpha(prob)?;
-    let d = expect_ln_p_beta(prob)?;
-    let e = expect_ln_q_theta(prob)?;
-    let f = expect_ln_q_alpha(prob)?;
-    let g = expect_ln_q_beta(prob)?;
-
-    return Ok(a + b + c + d - e - f - g);
+    Ok(expect_ln_p_y(prob)? +
+    expect_ln_p_theta(prob)? +
+    expect_ln_p_alpha(prob)? +
+    expect_ln_p_beta(prob)? -
+    expect_ln_q_theta(prob)? -
+    expect_ln_q_alpha(prob)? -
+    expect_ln_q_beta(prob)?)
 }
 
 // Expected log probability of labels conditioned on parameter weights
