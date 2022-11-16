@@ -167,3 +167,44 @@ impl ScalarDistribution for BernoulliDistribution {
         self.variance().sqrt()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use assert_approx_eq::assert_approx_eq;
+
+    #[test]
+    fn test_gamma() {
+        let a = GammaDistribution::new(1.0, 2.0).unwrap();
+        assert!(a.shape == 1.0);
+        assert!(a.rate == 2.0);
+        assert_approx_eq!(a.mean(), 0.5);
+        assert_approx_eq!(a.variance(), 0.25);
+        assert_approx_eq!(a.std_dev(), 0.5);
+
+        assert!(GammaDistribution::new(0.0, 1.0).is_err());
+    }
+
+    #[test]
+    fn test_gaussian() {
+        let a = GaussianDistribution::new(1.0, 4.0).unwrap();
+        assert!(a.mean == 1.0);
+        assert!(a.variance == 4.0);
+        assert_approx_eq!(a.mean(), 1.0);
+        assert_approx_eq!(a.variance(), 4.0);
+        assert_approx_eq!(a.std_dev(), 2.0);
+
+        assert!(GaussianDistribution::new(0.0, 0.0).is_err());
+    }
+
+    #[test]
+    fn test_bernoulli() {
+        let a = BernoulliDistribution::new(0.4).unwrap();
+        assert!(a.p == 0.4);
+        assert_approx_eq!(a.mean(), 0.4);
+        assert_approx_eq!(a.variance(), 0.24);
+        assert_approx_eq!(a.std_dev(), 0.24f64.sqrt());
+
+        assert!(BernoulliDistribution::new(2.0).is_err());
+    }
+}

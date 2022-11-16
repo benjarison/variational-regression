@@ -14,7 +14,7 @@ type DenseMatrix = DMatrix<f64>;
 
 ///
 /// Specifies configurable hyperparameters for training a 
-/// variational linear regression model
+/// variational logistic regression model
 /// 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogisticConfig {
