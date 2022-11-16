@@ -15,7 +15,7 @@ type DenseMatrix = DMatrix<f64>;
 /// variational linear regression model
 /// 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TrainConfig {
+pub struct LinearConfig {
     /// Prior distribution over the precision of the model weights
     pub weight_precision_prior: GammaDistribution,
     /// Prior distribution over the precision of the noise term
@@ -30,9 +30,9 @@ pub struct TrainConfig {
     pub verbose: bool
 }
 
-impl Default for TrainConfig {
+impl Default for LinearConfig {
     fn default() -> Self {
-        TrainConfig {
+        LinearConfig {
             weight_precision_prior: GammaDistribution::new(1e-4, 1e-4).unwrap(),
             noise_precision_prior: GammaDistribution::new(1.0001, 1e-4).unwrap(),
             bias: true,
@@ -74,7 +74,7 @@ impl VariationalLinearRegression {
     pub fn train(
         features: &Vec<Vec<f64>>,
         labels: &Vec<f64>,
-        config: &TrainConfig
+        config: &LinearConfig
     ) -> Result<VariationalLinearRegression, RegressionError> {
         // precompute required values
         let mut problem = Problem::new(features, labels, config);
@@ -146,7 +146,7 @@ impl Problem {
     fn new(
         features: &Vec<Vec<f64>>,
         labels: &Vec<f64>,
-        config: &TrainConfig
+        config: &LinearConfig
     ) -> Problem {
         let x = design_matrix(features, config.bias);
         let n = x.nrows();
@@ -309,7 +309,7 @@ mod tests {
     fn test_train() {
         let x = Vec::from(FEATURES.map(Vec::from));
         let y = Vec::from(LABELS);
-        let config = TrainConfig::default();
+        let config = LinearConfig::default();
         let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
         assert_approx_eq!(model.weights()[0], 0.14022283613177447);
         assert_approx_eq!(model.weights()[1], -0.08826080780896867);
@@ -322,7 +322,7 @@ mod tests {
     fn test_predict() {
         let x = Vec::from(FEATURES.map(Vec::from));
         let y = Vec::from(LABELS);
-        let config = TrainConfig::default();
+        let config = LinearConfig::default();
         let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
         let p = model.predict(&vec![0.3, 0.8, -0.1, -0.3]).unwrap();
         assert_approx_eq!(p.mean(), -0.1495143747869945);
