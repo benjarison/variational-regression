@@ -119,7 +119,8 @@ impl VariationalLinearRegression {
     }
 
     ///
-    /// Provides the trained model weights
+    /// Provides the trained model weights. If a bias term was included,
+    /// then the first value represents the bias.
     /// 
     pub fn weights(&self) -> &Vec<f64> {
         self.weights.data.as_vec()
