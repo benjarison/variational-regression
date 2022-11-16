@@ -110,7 +110,7 @@ impl VariationalLinearRegression {
     /// 
     /// `features` - The vector of feature values
     /// 
-    pub fn predict(&self, features: &Vec<f64>) -> Result<GaussianDistribution, RegressionError> {
+    pub fn predict(&self, features: &[f64]) -> Result<GaussianDistribution, RegressionError> {
         let x = design_vector(features, self.bias);
         let npm = self.noise_precision.mean();
         let pred_mean = x.dot(&self.weights);

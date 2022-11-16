@@ -106,7 +106,7 @@ impl VariationalLogisticRegression {
     /// 
     /// `features` - The vector of feature values
     /// 
-    pub fn predict(&self, features: &Vec<f64>) -> Result<BernoulliDistribution, RegressionError> {
+    pub fn predict(&self, features: &[f64]) -> Result<BernoulliDistribution, RegressionError> {
         let x = design_vector(features, self.bias);
         let mu = x.dot(&self.weights);
         let s = (&self.covariance * &x).dot(&x);

@@ -19,7 +19,7 @@ pub fn design_matrix(features: &Vec<Vec<f64>>, bias: bool) -> DenseMatrix {
     return x;
 }
 
-pub fn design_vector(features: &Vec<f64>, bias: bool) -> DenseVector {
+pub fn design_vector(features: &[f64], bias: bool) -> DenseVector {
     let offset = if bias { 1 } else { 0 };
     let d = features.len() + offset;
     let mut x = DenseVector::zeros(d);
