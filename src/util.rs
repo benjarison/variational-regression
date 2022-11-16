@@ -32,9 +32,3 @@ pub fn design_vector(features: &[f64], bias: bool) -> DenseVector {
     return x;
 }
 
-pub fn trace_of_product(a: &DenseMatrix, b: &DenseMatrix) -> f64 {
-    (0..a.nrows())
-    .fold(0.0, |sum, i| {
-        sum + (a.row(i) * b.column(i))[(0, 0)]
-    })
-}

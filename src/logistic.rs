@@ -5,8 +5,8 @@ use serde::{Serialize, Deserialize};
 
 use crate::distribution::{GammaDistribution, BernoulliDistribution, ScalarDistribution};
 use crate::error::RegressionError;
-use crate::math::{LN_2PI, logistic};
-use crate::util::{design_matrix, design_vector, trace_of_product};
+use crate::math::{LN_2PI, logistic, trace_of_product};
+use crate::util::{design_matrix, design_vector};
 
 type DenseVector = DVector<f64>;
 type DenseMatrix = DMatrix<f64>;
