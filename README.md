@@ -59,8 +59,7 @@ The models implemented here are heavily based on those presented in Chapter 10 o
 ## Examples
 
 ```rust
-use variational_regression::linear::{VariationalLinearRegression, TrainConfig};
-use variational_regression::error::RegressionError;
+use variational_regression::*;
 
 fn main() -> Result<(), RegressionError> {
 
@@ -82,7 +81,7 @@ fn main() -> Result<(), RegressionError> {
     let labels = vec![-0.4, 0.1, -0.8, 0.5, 0.6, -0.2, 0.0, 0.7, -0.3, 0.2];
     
     // configure and train model
-    let config = TrainConfig::default();
+    let config = LinearConfig::default();
     let model = VariationalLinearRegression::train(&features, &labels, &config)?;
     
     // inspect model weights
@@ -102,8 +101,7 @@ fn main() -> Result<(), RegressionError> {
 ```
 
 ```rust
-use variational_regression::logistic::{VariationalLogisticRegression, TrainConfig};
-use variational_regression::error::RegressionError;
+use variational_regression::*;
 
 fn main() -> Result<(), RegressionError> {
 
@@ -125,7 +123,7 @@ fn main() -> Result<(), RegressionError> {
     let labels = vec![true, false, true, false, true, false, true, false, true, false];
     
     // configure and train model
-    let config = TrainConfig::default();
+    let config = LogisticConfig::default();
     let model = VariationalLogisticRegression::train(&features, &labels, &config)?;
     
     // inspect model weights
