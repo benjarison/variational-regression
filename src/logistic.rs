@@ -17,7 +17,7 @@ type DenseMatrix = DMatrix<f64>;
 /// variational logistic regression model
 /// 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LogisticConfig {
+pub struct LogisticTrainConfig {
     /// Prior distribution over the precision of the model weights
     pub weight_precision_prior: GammaDistribution,
     /// Whether or not to include a bias term
@@ -30,9 +30,9 @@ pub struct LogisticConfig {
     pub verbose: bool
 }
 
-impl Default for LogisticConfig {
+impl Default for LogisticTrainConfig {
     fn default() -> Self {
-        LogisticConfig {
+        LogisticTrainConfig {
             weight_precision_prior: GammaDistribution::new(1e-4, 1e-4).unwrap(),
             bias: true,
             max_iter: 1000, 
@@ -71,7 +71,7 @@ impl VariationalLogisticRegression {
     pub fn train(
         features: &Vec<Vec<f64>>,
         labels: &Vec<bool>,
-        config: &LogisticConfig
+        config: &LogisticTrainConfig
     ) -> Result<VariationalLogisticRegression, RegressionError> {
         // precompute required values
         let mut problem = Problem::new(features, labels, config);
@@ -142,7 +142,7 @@ impl Problem {
     fn new(
         features: &Vec<Vec<f64>>,
         labels: &Vec<bool>,
-        config: &LogisticConfig
+        config: &LogisticTrainConfig
     ) -> Problem {
         let x = design_matrix(features, config.bias);
         let n = x.nrows();
@@ -308,7 +308,7 @@ mod tests {
     fn test_train() {
         let x = Vec::from(FEATURES.map(Vec::from));
         let y = Vec::from(LABELS);
-        let config = LogisticConfig::default();
+        let config = LogisticTrainConfig::default();
         let model = VariationalLogisticRegression::train(&x, &y, &config).unwrap();
         assert_approx_eq!(model.weights()[0], 0.0043520654824470515);
         assert_approx_eq!(model.weights()[1], -0.10946450049722892);
@@ -321,7 +321,7 @@ mod tests {
     fn test_predict() {
         let x = Vec::from(FEATURES.map(Vec::from));
         let y = Vec::from(LABELS);
-        let config = LogisticConfig::default();
+        let config = LogisticTrainConfig::default();
         let model = VariationalLogisticRegression::train(&x, &y, &config).unwrap();
         let p = model.predict(&vec![0.3, 0.8, -0.1, -0.3]).unwrap().mean();
         assert_approx_eq!(p, 0.2956358962602995);

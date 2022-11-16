@@ -6,6 +6,6 @@ mod math;
 mod util;
 
 pub use distribution::ScalarDistribution;
-pub use linear::{VariationalLinearRegression, LinearConfig};
-pub use logistic::{VariationalLogisticRegression, LogisticConfig};
+pub use linear::{VariationalLinearRegression, LinearTrainConfig};
+pub use logistic::{VariationalLogisticRegression, LogisticTrainConfig};
 pub use error::RegressionError;
