@@ -2,7 +2,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter, Debug};
 
 ///
-/// Represents a regression-related error
+/// Represents a regression related error
 /// 
 #[derive(Debug)]
 pub enum RegressionError {

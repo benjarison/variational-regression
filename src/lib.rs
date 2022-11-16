@@ -1,3 +1,7 @@
+//!
+//! This crate provides functionality for regression models trained using variational inference
+//!
+
 pub mod distribution;
 pub mod error;
 pub mod linear;

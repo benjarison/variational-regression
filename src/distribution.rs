@@ -139,7 +139,7 @@ impl BernoulliDistribution {
     /// 
     /// # Arguments
     /// 
-    /// `p` - The probability of 'success'
+    /// `p` - The probability of a positive event
     /// 
     pub fn new(p: f64) -> Result<BernoulliDistribution, RegressionError> {
         if p >= 0.0 && p <= 1.0 {
