@@ -81,7 +81,7 @@ fn main() -> Result<(), RegressionError> {
     let labels = vec![-0.4, 0.1, -0.8, 0.5, 0.6, -0.2, 0.0, 0.7, -0.3, 0.2];
     
     // configure and train model
-    let config = LinearConfig::default();
+    let config = LinearTrainConfig::default();
     let model = VariationalLinearRegression::train(&features, &labels, &config)?;
     
     // inspect model weights
@@ -123,7 +123,7 @@ fn main() -> Result<(), RegressionError> {
     let labels = vec![true, false, true, false, true, false, true, false, true, false];
     
     // configure and train model
-    let config = LogisticConfig::default();
+    let config = LogisticTrainConfig::default();
     let model = VariationalLogisticRegression::train(&features, &labels, &config)?;
     
     // inspect model weights
