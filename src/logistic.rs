@@ -3,10 +3,10 @@ use nalgebra::{Cholesky, DVector, DMatrix};
 use special::Gamma;
 use serde::{Serialize, Deserialize};
 
+use crate::{BinaryLabels, Features, design_vector};
 use crate::distribution::{GammaDistribution, BernoulliDistribution, ScalarDistribution};
 use crate::error::RegressionError;
 use crate::math::{LN_2PI, logistic, trace_of_product};
-use crate::util::{design_matrix, design_vector};
 
 type DenseVector = DVector<f64>;
 type DenseMatrix = DMatrix<f64>;
@@ -69,8 +69,8 @@ impl VariationalLogisticRegression {
     /// `config` - The training configuration
     /// 
     pub fn train(
-        features: &Vec<Vec<f64>>,
-        labels: &Vec<bool>,
+        features: impl Features,
+        labels: impl BinaryLabels,
         config: &LogisticTrainConfig
     ) -> Result<VariationalLogisticRegression, RegressionError> {
         // precompute required values
@@ -141,17 +141,14 @@ struct Problem {
 
 impl Problem {
     fn new(
-        features: &Vec<Vec<f64>>,
-        labels: &Vec<bool>,
+        features: impl Features,
+        labels: impl BinaryLabels,
         config: &LogisticTrainConfig
     ) -> Problem {
-        let x = design_matrix(features, config.bias);
+        let x = features.into_matrix(config.bias);
         let n = x.nrows();
         let d = x.ncols();
-        let y = DenseVector::from_iterator(
-            labels.len(), 
-            labels.into_iter().map(|&lab| if lab {1.0} else {0.0})
-        );
+        let y = labels.into_vector();
         let sxy = compute_sxy(&x, &y, d);
         let wpp = config.weight_precision_prior;
         let alpha = vec![wpp; x.ncols()];

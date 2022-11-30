@@ -2,10 +2,10 @@ use nalgebra::{Cholesky, DVector, DMatrix};
 use special::Gamma;
 use serde::{Serialize, Deserialize};
 
+use crate::{RealLabels, Features, design_vector};
 use crate::error::RegressionError;
 use crate::distribution::{GammaDistribution, GaussianDistribution, ScalarDistribution};
 use crate::math::LN_2PI;
-use crate::util::{design_matrix, design_vector};
 
 type DenseVector = DVector<f64>;
 type DenseMatrix = DMatrix<f64>;
@@ -145,14 +145,14 @@ struct Problem {
 
 impl Problem {
     fn new(
-        features: &Vec<Vec<f64>>,
-        labels: &Vec<f64>,
+        features: impl Features,
+        labels: impl RealLabels,
         config: &LinearTrainConfig
     ) -> Problem {
-        let x = design_matrix(features, config.bias);
+        let x = features.into_matrix(config.bias);
         let n = x.nrows();
         let d = x.ncols();
-        let y = DenseVector::from_vec(labels.clone());
+        let y = labels.into_vector();
         let xtx = x.tr_mul(&x);
         let xty = x.tr_mul(&y);
         let yty = y.dot(&y);
@@ -167,7 +167,7 @@ impl Problem {
     }
 }
 
-// Factorized distribution for parameter weights
+// Factorized distribution for parameters
 fn q_theta(prob: &mut Problem) -> Result<(), RegressionError> {
     let mut s_inv = &prob.xtx * prob.beta.mean();
     for i in 0..prob.d {
