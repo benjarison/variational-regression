@@ -72,8 +72,8 @@ impl VariationalLinearRegression {
     /// `config` - The training configuration
     /// 
     pub fn train(
-        features: &Vec<Vec<f64>>,
-        labels: &Vec<f64>,
+        features: impl Features,
+        labels: impl RealLabels,
         config: &LinearTrainConfig
     ) -> Result<VariationalLinearRegression, RegressionError> {
         // precompute required values
