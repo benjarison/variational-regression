@@ -64,26 +64,31 @@ use variational_regression::*;
 fn main() -> Result<(), RegressionError> {
 
     // construct features
-    let features = vec![
-        vec![-0.2, -0.9, -0.5, 0.3],
-        vec![0.6, 0.3, 0.3, -0.4],
-        vec![0.9, -0.4, -0.5, -0.6],
-        vec![-0.7, 0.8, 0.3, -0.3],
-        vec![-0.5, -0.7, -0.1, 0.8],
-        vec![0.5, 0.5, 0.0, 0.1],
-        vec![0.1, -0.0, 0.0, -0.2],
-        vec![0.4, 0.0, 0.2, 0.0],
-        vec![-0.2, 0.9, -0.1, -0.9],
-        vec![0.1, 0.4, -0.5, 0.9],
+    let features: &[&[f64]] = &[
+        &[-0.2, -0.9, -0.5, 0.3],
+        &[0.6, 0.3, 0.3, -0.4],
+        &[0.9, -0.4, -0.5, -0.6],
+        &[-0.7, 0.8, 0.3, -0.3],
+        &[-0.5, -0.7, -0.1, 0.8],
+        &[0.5, 0.5, 0.0, 0.1],
+        &[0.1, -0.0, 0.0, -0.2],
+        &[0.4, 0.0, 0.2, 0.0],
+        &[-0.2, 0.9, -0.1, -0.9],
+        &[0.1, 0.4, -0.5, 0.9],
     ];
     
     // construct labels
-    let labels = vec![-0.4, 0.1, -0.8, 0.5, 0.6, -0.2, 0.0, 0.7, -0.3, 0.2];
+    let labels: &[f64] = &[-0.4, 0.1, -0.8, 0.5, 0.6, -0.2, 0.0, 0.7, -0.3, 0.2];
     
     // configure and train model
     let config = LinearTrainConfig::default();
-    let model = VariationalLinearRegression::train(&features, &labels, &config)?;
+    let model = VariationalLinearRegression::train(features, labels, &config)?;
     
+    // inspect model bias
+    if let Some(bias) = model.bias() {
+        println!("Bias: {}", bias);
+    }
+
     // inspect model weights
     for (ind, weight) in model.weights().iter().enumerate() {
         println!("Weight {}: {}", ind + 1, weight);
@@ -93,7 +98,7 @@ fn main() -> Result<(), RegressionError> {
     println!("Noise Variance: {}", 1.0 / model.noise_precision.mean());
     
     // get predictive distribution
-    let prediction = model.predict(&vec![0.1, -0.5, 0.3, 0.9])?;
+    let prediction = model.predict(&[0.1, -0.5, 0.3, 0.9])?;
     println!("Predictive mean: {}", prediction.mean());
     
     Ok(())
@@ -105,36 +110,41 @@ use variational_regression::*;
 
 fn main() -> Result<(), RegressionError> {
 
-    // construct features
-    let features = vec![
-        vec![-0.2, -0.9, -0.5, 0.3],
-        vec![0.6, 0.3, 0.3, -0.4],
-        vec![0.9, -0.4, -0.5, -0.6],
-        vec![-0.7, 0.8, 0.3, -0.3],
-        vec![-0.5, -0.7, -0.1, 0.8],
-        vec![0.5, 0.5, 0.0, 0.1],
-        vec![0.1, -0.0, 0.0, -0.2],
-        vec![0.4, 0.0, 0.2, 0.0],
-        vec![-0.2, 0.9, -0.1, -0.9],
-        vec![0.1, 0.4, -0.5, 0.9],
+ // construct features
+    let features: &[&[f64]] = &[
+        &[-0.2, -0.9, -0.5, 0.3],
+        &[0.6, 0.3, 0.3, -0.4],
+        &[0.9, -0.4, -0.5, -0.6],
+        &[-0.7, 0.8, 0.3, -0.3],
+        &[-0.5, -0.7, -0.1, 0.8],
+        &[0.5, 0.5, 0.0, 0.1],
+        &[0.1, -0.0, 0.0, -0.2],
+        &[0.4, 0.0, 0.2, 0.0],
+        &[-0.2, 0.9, -0.1, -0.9],
+        &[0.1, 0.4, -0.5, 0.9],
     ];
     
     // construct labels
-    let labels = vec![true, false, true, false, true, false, true, false, true, false];
+    let labels: &[bool] = &[true, false, true, false, true, false, true, false, true, false];
     
     // configure and train model
     let config = LogisticTrainConfig::default();
-    let model = VariationalLogisticRegression::train(&features, &labels, &config)?;
+    let model = VariationalLogisticRegression::train(features, labels, &config)?;
     
+    // inspect model bias
+    if let Some(bias) = model.bias() {
+        println!("Bias: {}", bias);
+    }
+
     // inspect model weights
     for (ind, weight) in model.weights().iter().enumerate() {
         println!("Weight {}: {}", ind + 1, weight);
     }
 
     // get predictive distribution
-    let prediction = model.predict(&vec![0.1, -0.5, 0.3, 0.9])?;
+    let prediction = model.predict(&[0.1, -0.5, 0.3, 0.9])?;
     println!("Predictive mean: {}", prediction.mean());
-    
+
     Ok(())
 }
 ```
