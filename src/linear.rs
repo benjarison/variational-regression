@@ -49,13 +49,12 @@ impl Default for LinearTrainConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VariationalLinearRegression {
     /// Learned model weights
-    weights: DenseVector,
+    params: DenseVector,
     /// Feature covariance matrix
     covariance: DenseMatrix,
+    bias: bool,
     /// Noise precision distribution
     pub noise_precision: GammaDistribution,
-    /// Whether or not the model uses a bias term
-    pub bias: bool,
     /// Variational lower bound
     pub bound: f64
 }
@@ -89,10 +88,10 @@ impl VariationalLinearRegression {
             }
             if (new_bound - problem.bound) / problem.bound.abs() <= config.tolerance {
                 return Ok(VariationalLinearRegression {
-                    weights: problem.theta, 
+                    params: problem.theta, 
                     covariance: problem.s, 
-                    noise_precision: problem.beta, 
                     bias: config.bias,
+                    noise_precision: problem.beta, 
                     bound: new_bound
                 })
             } else {
@@ -113,17 +112,26 @@ impl VariationalLinearRegression {
     pub fn predict(&self, features: &[f64]) -> Result<GaussianDistribution, RegressionError> {
         let x = design_vector(features, self.bias);
         let npm = self.noise_precision.mean();
-        let pred_mean = x.dot(&self.weights);
+        let pred_mean = x.dot(&self.params);
         let pred_var = (1.0 / npm) + (&self.covariance * &x).dot(&x);
         GaussianDistribution::new(pred_mean, pred_var)
     }
 
-    ///
-    /// Provides the trained model weights. If a bias term was included,
-    /// then the first value represents the bias.
-    /// 
-    pub fn weights(&self) -> &Vec<f64> {
-        self.weights.data.as_vec()
+    pub fn weights(&self) -> &[f64] {
+        let params = self.params.as_slice();
+        if self.bias {
+            &params[1..]
+        } else {
+            params
+        }
+    }
+
+    pub fn bias(&self) -> Option<f64> {
+        if self.bias {
+            Some(self.params[0])
+        } else {
+            None
+        }
     }
 }
 
@@ -136,6 +144,7 @@ struct Problem {
     pub s: DenseMatrix,
     pub alpha: Vec<GammaDistribution>,
     pub beta: GammaDistribution,
+    pub bpp: Option<GammaDistribution>,
     pub wpp: GammaDistribution,
     pub npp: GammaDistribution,
     pub n: usize,
@@ -144,6 +153,7 @@ struct Problem {
 }
 
 impl Problem {
+
     fn new(
         features: impl Features,
         labels: impl RealLabels,
@@ -156,18 +166,33 @@ impl Problem {
         let xtx = x.tr_mul(&x);
         let xty = x.tr_mul(&y);
         let yty = y.dot(&y);
+        let bpp = if config.bias {
+            Some(GammaDistribution { shape: 1e-4, rate: 1e-4 })
+        } else {
+            None
+        };
         let wpp = config.weight_precision_prior;
         let npp = config.noise_precision_prior;
-        let alpha = vec![wpp; x.ncols()];
+        let mut alpha = vec![wpp; x.ncols()];
+        if let Some(pp) = bpp {
+            alpha[0] = pp;
+        }
         let beta = npp;
         let bound = f64::NEG_INFINITY;
         let theta = DenseVector::zeros(d);
         let s = DenseMatrix::zeros(d, d);
-        Problem {xtx, xty, yty, theta, s, alpha, beta, wpp, npp, n, d, bound}
+        Problem {xtx, xty, yty, theta, s, alpha, beta, bpp, wpp, npp, n, d, bound}
+    }
+
+    fn param_precision_prior(&self, ind: usize) -> GammaDistribution {
+        match (ind, self.bpp) {
+            (0, Some(bpp)) => bpp,
+            _ => self.wpp
+        }
     }
 }
 
-// Factorized distribution for parameters
+// Factorized distribution for parameter values
 fn q_theta(prob: &mut Problem) -> Result<(), RegressionError> {
     let mut s_inv = &prob.xtx * prob.beta.mean();
     for i in 0..prob.d {
@@ -181,11 +206,12 @@ fn q_theta(prob: &mut Problem) -> Result<(), RegressionError> {
     Ok(())
 }
 
-// Factorized distribution for weight precisions
+// Factorized distribution for parameter precisions
 fn q_alpha(prob: &mut Problem) -> Result<(), RegressionError> {
     for i in 0..prob.d {
-        let inv_scale = prob.wpp.rate + 0.5 * (prob.theta[i] * prob.theta[i] + prob.s[(i, i)]);
-        prob.alpha[i] = GammaDistribution::new(prob.wpp.shape + 0.5, inv_scale)?;
+        let pp = prob.param_precision_prior(i);
+        let inv_scale = pp.rate + 0.5 * (prob.theta[i] * prob.theta[i] + prob.s[(i, i)]);
+        prob.alpha[i] = GammaDistribution::new(pp.shape + 0.5, inv_scale)?;
     }
     Ok(())
 }
@@ -210,7 +236,7 @@ fn lower_bound(prob: &Problem) -> Result<f64, RegressionError> {
     expect_ln_q_beta(prob)?)
 }
 
-// Expected log probability of labels conditioned on parameter weights
+// Expected log probability of labels conditioned on parameter values
 fn expect_ln_p_y(prob: &Problem) -> Result<f64, RegressionError> {
     let bm = prob.beta.mean();
     let tc = &prob.theta * prob.theta.transpose();
@@ -222,7 +248,7 @@ fn expect_ln_p_y(prob: &Problem) -> Result<f64, RegressionError> {
     Ok(part1 * part2 - part3 + part4 - part5)
 }
 
-// Expceted log probability of parameter weights conditioned on their precisions
+// Expceted log probability of parameter values conditioned on their precisions
 fn expect_ln_p_theta(prob: &Problem) -> Result<f64, RegressionError> {
     let init = (prob.theta.len() as f64 * -0.5) * LN_2PI;
     prob.alpha.iter().enumerate().try_fold(init, |sum, (i, a)| {
@@ -233,13 +259,14 @@ fn expect_ln_p_theta(prob: &Problem) -> Result<f64, RegressionError> {
     })
 }
 
-// Expceted log probability of the parameter weight precisions
+// Expceted log probability of the parameter value precisions
 fn expect_ln_p_alpha(prob: &Problem) -> Result<f64, RegressionError> {
-    prob.alpha.iter().try_fold(0.0, |sum, a| {
+    prob.alpha.iter().enumerate().try_fold(0.0, |sum, (i, a)| {
         let am = a.mean();
-        let term1 = prob.wpp.shape * prob.wpp.rate.ln();
-        let term2 = (prob.wpp.shape - 1.0) * (Gamma::digamma(a.shape) - a.rate.ln());
-        let term3 = (prob.wpp.rate * am) + Gamma::ln_gamma(prob.wpp.shape).0;
+        let pp = prob.param_precision_prior(i);
+        let term1 = pp.shape * pp.rate.ln();
+        let term2 = (pp.shape - 1.0) * (Gamma::digamma(a.shape) - a.rate.ln());
+        let term3 = (pp.rate * am) + Gamma::ln_gamma(pp.shape).0;
         Ok(sum + term1 + term2 - term3)
     })
 }
@@ -252,7 +279,7 @@ fn expect_ln_p_beta(prob: &Problem) -> Result<f64, RegressionError> {
     Ok(part1 + part2 - part3)
 }
 
-// Expected entropy of the parameter weights
+// Expected entropy of the parameter values
 fn expect_ln_q_theta(prob: &Problem) -> Result<f64, RegressionError> {
     let m = prob.s.shape().0;
     let chol = Cholesky::new(prob.s.clone())
@@ -312,11 +339,11 @@ mod tests {
         let y = Vec::from(LABELS);
         let config = LinearTrainConfig::default();
         let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
-        assert_approx_eq!(model.weights()[0], 0.14022283613177447);
-        assert_approx_eq!(model.weights()[1], -0.08826080780896867);
-        assert_approx_eq!(model.weights()[2], 0.003684347234472394);
-        assert_approx_eq!(model.weights()[3], 1.1209335465339734);
-        assert_approx_eq!(model.weights()[4], 0.5137103057008632);
+        assert_approx_eq!(model.bias().unwrap(), 0.14022283613177447);
+        assert_approx_eq!(model.weights()[0], -0.08826080780896867);
+        assert_approx_eq!(model.weights()[1], 0.003684347234472394);
+        assert_approx_eq!(model.weights()[2], 1.1209335465339734);
+        assert_approx_eq!(model.weights()[3], 0.5137103057008632);
     }
 
     #[test]
