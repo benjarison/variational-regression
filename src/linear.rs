@@ -21,7 +21,7 @@ pub struct LinearTrainConfig {
     /// Prior distribution over the precision of the noise term
     pub noise_precision_prior: GammaDistribution,
     /// Whether or not to include a bias term
-    pub bias: bool,
+    pub use_bias: bool,
     /// Maximum number of training iterations
     pub max_iter: usize,
     /// Convergence criteria threshold
@@ -35,7 +35,7 @@ impl Default for LinearTrainConfig {
         LinearTrainConfig {
             weight_precision_prior: GammaDistribution::new(1e-4, 1e-4).unwrap(),
             noise_precision_prior: GammaDistribution::new(1.0001, 1e-4).unwrap(),
-            bias: true,
+            use_bias: true,
             max_iter: 1000, 
             tolerance: 1e-4,
             verbose: true
@@ -52,7 +52,8 @@ pub struct VariationalLinearRegression {
     params: DenseVector,
     /// Feature covariance matrix
     covariance: DenseMatrix,
-    bias: bool,
+    /// Whether the model was trained with a bias term or not
+    includes_bias: bool,
     /// Noise precision distribution
     pub noise_precision: GammaDistribution,
     /// Variational lower bound
@@ -90,7 +91,7 @@ impl VariationalLinearRegression {
                 return Ok(VariationalLinearRegression {
                     params: problem.theta, 
                     covariance: problem.s, 
-                    bias: config.bias,
+                    includes_bias: config.use_bias,
                     noise_precision: problem.beta, 
                     bound: new_bound
                 })
@@ -110,7 +111,7 @@ impl VariationalLinearRegression {
     /// `features` - The vector of feature values
     /// 
     pub fn predict(&self, features: &[f64]) -> Result<GaussianDistribution, RegressionError> {
-        let x = design_vector(features, self.bias);
+        let x = design_vector(features, self.includes_bias);
         let npm = self.noise_precision.mean();
         let pred_mean = x.dot(&self.params);
         let pred_var = (1.0 / npm) + (&self.covariance * &x).dot(&x);
@@ -119,7 +120,7 @@ impl VariationalLinearRegression {
 
     pub fn weights(&self) -> &[f64] {
         let params = self.params.as_slice();
-        if self.bias {
+        if self.includes_bias {
             &params[1..]
         } else {
             params
@@ -127,7 +128,7 @@ impl VariationalLinearRegression {
     }
 
     pub fn bias(&self) -> Option<f64> {
-        if self.bias {
+        if self.includes_bias {
             Some(self.params[0])
         } else {
             None
@@ -159,14 +160,14 @@ impl Problem {
         labels: impl RealLabels,
         config: &LinearTrainConfig
     ) -> Problem {
-        let x = features.into_matrix(config.bias);
+        let x = features.into_matrix(config.use_bias);
         let n = x.nrows();
         let d = x.ncols();
         let y = labels.into_vector();
         let xtx = x.tr_mul(&x);
         let xty = x.tr_mul(&y);
         let yty = y.dot(&y);
-        let bpp = if config.bias {
+        let bpp = if config.use_bias {
             Some(GammaDistribution { shape: 1e-4, rate: 1e-4 })
         } else {
             None

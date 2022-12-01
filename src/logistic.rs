@@ -21,7 +21,7 @@ pub struct LogisticTrainConfig {
     /// Prior distribution over the precision of the model weights
     pub weight_precision_prior: GammaDistribution,
     /// Whether or not to include a bias term
-    pub bias: bool,
+    pub use_bias: bool,
     /// Maximum number of training iterations
     pub max_iter: usize,
     /// Convergence criteria threshold
@@ -34,7 +34,7 @@ impl Default for LogisticTrainConfig {
     fn default() -> Self {
         LogisticTrainConfig {
             weight_precision_prior: GammaDistribution::new(1e-4, 1e-4).unwrap(),
-            bias: true,
+            use_bias: true,
             max_iter: 1000, 
             tolerance: 1e-4,
             verbose: true
@@ -51,7 +51,8 @@ pub struct VariationalLogisticRegression {
     params: DenseVector,
     /// Feature covariance matrix
     covariance: DenseMatrix,
-    bias: bool,
+    /// Whether the model was trained with a bias term or not
+    includes_bias: bool,
     /// Variational lower bound
     pub bound: f64
 }
@@ -87,7 +88,7 @@ impl VariationalLogisticRegression {
                 return Ok(VariationalLogisticRegression {
                     params: problem.theta, 
                     covariance: problem.s,
-                    bias: config.bias,
+                    includes_bias: config.use_bias,
                     bound: new_bound
                 })
             } else {
@@ -106,7 +107,7 @@ impl VariationalLogisticRegression {
     /// `features` - The vector of feature values
     /// 
     pub fn predict(&self, features: &[f64]) -> Result<BernoulliDistribution, RegressionError> {
-        let x = design_vector(features, self.bias);
+        let x = design_vector(features, self.includes_bias);
         let mu = x.dot(&self.params);
         let s = (&self.covariance * &x).dot(&x);
         let k = 1.0 / (1.0 + (PI * s) / 8.0).sqrt();
@@ -116,7 +117,7 @@ impl VariationalLogisticRegression {
 
     pub fn weights(&self) -> &[f64] {
         let params = self.params.as_slice();
-        if self.bias {
+        if self.includes_bias {
             &params[1..]
         } else {
             params
@@ -124,7 +125,7 @@ impl VariationalLogisticRegression {
     }
 
     pub fn bias(&self) -> Option<f64> {
-        if self.bias {
+        if self.includes_bias {
             Some(self.params[0])
         } else {
             None
@@ -155,13 +156,13 @@ impl Problem {
         labels: impl BinaryLabels,
         config: &LogisticTrainConfig
     ) -> Problem {
-        let x = features.into_matrix(config.bias);
+        let x = features.into_matrix(config.use_bias);
         let n = x.nrows();
         let d = x.ncols();
         let y = labels.into_vector();
         let sxy = compute_sxy(&x, &y, d);
         let wpp = config.weight_precision_prior;
-        let bpp = if config.bias {
+        let bpp = if config.use_bias {
             Some(GammaDistribution { shape: 1e-4, rate: 1e-4 })
         } else {
             None
