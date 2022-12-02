@@ -124,6 +124,9 @@ impl VariationalLogisticRegression {
         BernoulliDistribution::new(p)
     }
 
+    ///
+    /// Provides the model weights
+    /// 
     pub fn weights(&self) -> &[f64] {
         let params = self.params.as_slice();
         if self.includes_bias {
@@ -133,6 +136,9 @@ impl VariationalLogisticRegression {
         }
     }
 
+    ///
+    /// Provides the bias term, if specified during training
+    /// 
     pub fn bias(&self) -> Option<f64> {
         if self.includes_bias {
             Some(self.params[0])

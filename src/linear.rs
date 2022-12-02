@@ -127,6 +127,9 @@ impl VariationalLinearRegression {
         GaussianDistribution::new(pred_mean, pred_var)
     }
 
+    ///
+    /// Provides the model weights
+    /// 
     pub fn weights(&self) -> &[f64] {
         let params = self.params.as_slice();
         if self.includes_bias {
@@ -136,6 +139,9 @@ impl VariationalLinearRegression {
         }
     }
 
+    ///
+    /// Provides the bias term, if specified during training
+    /// 
     pub fn bias(&self) -> Option<f64> {
         if self.includes_bias {
             Some(self.params[0])
@@ -353,7 +359,20 @@ mod tests {
     ];
 
     #[test]
-    fn test_train() {
+    fn test_train_with_bias_with_standardize() {
+        let x = Vec::from(FEATURES.map(Vec::from));
+        let y = Vec::from(LABELS);
+        let config = LinearTrainConfig::default();
+        let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
+        assert_approx_eq!(model.bias().unwrap(), 0.009795973392064526);
+        assert_approx_eq!(model.weights()[0], -0.053736076572620695);
+        assert_approx_eq!(model.weights()[1], 0.002348926942734912);
+        assert_approx_eq!(model.weights()[2], 0.36479166380848826);
+        assert_approx_eq!(model.weights()[3], 0.2995772527448547);
+    }
+
+    #[test]
+    fn test_train_with_bias_no_standardize() {
         let x = Vec::from(FEATURES.map(Vec::from));
         let y = Vec::from(LABELS);
         let config = LinearTrainConfig {
@@ -369,7 +388,49 @@ mod tests {
     }
 
     #[test]
-    fn test_predict() {
+    fn test_train_no_bias_with_standardize() {
+        let x = Vec::from(FEATURES.map(Vec::from));
+        let y = Vec::from(LABELS);
+        let config = LinearTrainConfig {
+            use_bias: false,
+            ..Default::default()
+        };
+        let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
+        assert_approx_eq!(model.weights()[0], -0.0536007042304908);
+        assert_approx_eq!(model.weights()[1], 0.0024537840396777044);
+        assert_approx_eq!(model.weights()[2], 0.3649008472250164);
+        assert_approx_eq!(model.weights()[3], 0.2997887456881104);
+    }
+
+    #[test]
+    fn test_train_no_bias_no_standardize() {
+        let x = Vec::from(FEATURES.map(Vec::from));
+        let y = Vec::from(LABELS);
+        let config = LinearTrainConfig {
+            use_bias: false,
+            standardize: false,
+            ..Default::default()
+        };
+        let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
+        assert_approx_eq!(model.weights()[0], -0.0362564312306051);
+        assert_approx_eq!(model.weights()[1], 0.021598779423334057);
+        assert_approx_eq!(model.weights()[2], 0.9458928058270641);
+        assert_approx_eq!(model.weights()[3], 0.4751696529319309);
+    }
+
+    #[test]
+    fn test_predict_with_bias_with_standardize() {
+        let x = Vec::from(FEATURES.map(Vec::from));
+        let y = Vec::from(LABELS);
+        let config = LinearTrainConfig::default();
+        let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
+        let p = model.predict(&vec![0.3, 0.8, -0.1, -0.3]).unwrap();
+        assert_approx_eq!(p.mean(), -0.1601830957057508);
+        assert_approx_eq!(p.variance(), 0.0421041223659715);
+    }
+
+    #[test]
+    fn test_predict_with_bias_no_standardize() {
         let x = Vec::from(FEATURES.map(Vec::from));
         let y = Vec::from(LABELS);
         let config = LinearTrainConfig {
@@ -380,5 +441,34 @@ mod tests {
         let p = model.predict(&vec![0.3, 0.8, -0.1, -0.3]).unwrap();
         assert_approx_eq!(p.mean(), -0.1495143747869945);
         assert_approx_eq!(p.variance(), 0.047374206616233275);
+    }
+
+    #[test]
+    fn test_predict_no_bias_with_standardize() {
+        let x = Vec::from(FEATURES.map(Vec::from));
+        let y = Vec::from(LABELS);
+        let config = LinearTrainConfig {
+            use_bias: false,
+            ..Default::default()
+        };
+        let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
+        let p = model.predict(&vec![0.3, 0.8, -0.1, -0.3]).unwrap();
+        assert_approx_eq!(p.mean(), -0.16990565682335487);
+        assert_approx_eq!(p.variance(), 0.0409272332865222);
+    }
+
+    #[test]
+    fn test_predict_no_bias_no_standardize() {
+        let x = Vec::from(FEATURES.map(Vec::from));
+        let y = Vec::from(LABELS);
+        let config = LinearTrainConfig {
+            use_bias: false,
+            standardize: false,
+            ..Default::default()
+        };
+        let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
+        let p = model.predict(&vec![0.3, 0.8, -0.1, -0.3]).unwrap();
+        assert_approx_eq!(p.mean(), -0.2307380822928);
+        assert_approx_eq!(p.variance(), 0.07177809358927849);
     }
 }
