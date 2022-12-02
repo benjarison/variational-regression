@@ -356,7 +356,20 @@ mod tests {
     ];
 
     #[test]
-    fn test_train() {
+    fn test_train_with_bias_with_standardize() {
+        let x = Vec::from(FEATURES.map(Vec::from));
+        let y = Vec::from(LABELS);
+        let config = LogisticTrainConfig::default();
+        let model = VariationalLogisticRegression::train(&x, &y, &config).unwrap();
+        assert_approx_eq!(model.bias().unwrap(), 0.00951244801510034);
+        assert_approx_eq!(model.weights()[0], -0.19303165213334386);
+        assert_approx_eq!(model.weights()[1], -1.2534945326354745);
+        assert_approx_eq!(model.weights()[2], -0.6963518106208433);
+        assert_approx_eq!(model.weights()[3], -0.8508100398896856);
+    }
+
+    #[test]
+    fn test_train_with_bias_no_standardize() {
         let x = Vec::from(FEATURES.map(Vec::from));
         let y = Vec::from(LABELS);
         let config = LogisticTrainConfig {
@@ -372,7 +385,48 @@ mod tests {
     }
 
     #[test]
-    fn test_predict() {
+    fn test_train_no_bias_with_standardize() {
+        let x = Vec::from(FEATURES.map(Vec::from));
+        let y = Vec::from(LABELS);
+        let config = LogisticTrainConfig {
+            use_bias: false,
+            ..Default::default()
+        };
+        let model = VariationalLogisticRegression::train(&x, &y, &config).unwrap();
+        assert_approx_eq!(model.weights()[0], -0.22479264662358672);
+        assert_approx_eq!(model.weights()[1], -1.194338553263914);
+        assert_approx_eq!(model.weights()[2], -0.6763443319536045);
+        assert_approx_eq!(model.weights()[3], -0.793934474799946);
+    }
+
+    #[test]
+    fn test_train_no_bias_no_standardize() {
+        let x = Vec::from(FEATURES.map(Vec::from));
+        let y = Vec::from(LABELS);
+        let config = LogisticTrainConfig {
+            use_bias: false,
+            standardize: false,
+            ..Default::default()
+        };
+        let model = VariationalLogisticRegression::train(&x, &y, &config).unwrap();
+        assert_approx_eq!(model.weights()[0], -0.11478846445757208);
+        assert_approx_eq!(model.weights()[1], -1.6111314555274376);
+        assert_approx_eq!(model.weights()[2], -1.0489256680896761);
+        assert_approx_eq!(model.weights()[3], -0.6788653466293544);
+    }
+
+    #[test]
+    fn test_predict_with_bias_with_standardize() {
+        let x = Vec::from(FEATURES.map(Vec::from));
+        let y = Vec::from(LABELS);
+        let config = LogisticTrainConfig::default();
+        let model = VariationalLogisticRegression::train(&x, &y, &config).unwrap();
+        let p = model.predict(&vec![0.3, 0.8, -0.1, -0.3]).unwrap().mean();
+        assert_approx_eq!(p, 0.27380317759208006);
+    }
+
+    #[test]
+    fn test_predict_with_bias_no_standardize() {
         let x = Vec::from(FEATURES.map(Vec::from));
         let y = Vec::from(LABELS);
         let config = LogisticTrainConfig {
@@ -382,5 +436,32 @@ mod tests {
         let model = VariationalLogisticRegression::train(&x, &y, &config).unwrap();
         let p = model.predict(&vec![0.3, 0.8, -0.1, -0.3]).unwrap().mean();
         assert_approx_eq!(p, 0.2956358962602995);
+    }
+
+    #[test]
+    fn test_predict_no_bias_with_standardize() {
+        let x = Vec::from(FEATURES.map(Vec::from));
+        let y = Vec::from(LABELS);
+        let config = LogisticTrainConfig {
+            use_bias: false,
+            ..Default::default()
+        };
+        let model = VariationalLogisticRegression::train(&x, &y, &config).unwrap();
+        let p = model.predict(&vec![0.3, 0.8, -0.1, -0.3]).unwrap().mean();
+        assert_approx_eq!(p, 0.275642768184428);
+    }
+
+    #[test]
+    fn test_predict_no_bias_no_standardize() {
+        let x = Vec::from(FEATURES.map(Vec::from));
+        let y = Vec::from(LABELS);
+        let config = LogisticTrainConfig {
+            use_bias: false,
+            standardize: false,
+            ..Default::default()
+        };
+        let model = VariationalLogisticRegression::train(&x, &y, &config).unwrap();
+        let p = model.predict(&vec![0.3, 0.8, -0.1, -0.3]).unwrap().mean();
+        assert_approx_eq!(p, 0.29090997574190514);
     }
 }
