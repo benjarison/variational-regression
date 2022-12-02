@@ -13,6 +13,7 @@ pub use linear::{VariationalLinearRegression, LinearTrainConfig};
 pub use logistic::{VariationalLogisticRegression, LogisticTrainConfig};
 pub use error::RegressionError;
 
+use serde::{Serialize, Deserialize};
 use nalgebra::{DMatrix, DVector};
 type DenseMatrix = DMatrix<f64>;
 type DenseVector  = DVector<f64>;
@@ -97,7 +98,6 @@ impl BinaryLabels for &[bool] {
     }
 }
 
-
 pub (crate) fn design_vector(features: &[f64], bias: bool) -> DenseVector {
     let offset = if bias { 1 } else { 0 };
     let d = features.len() + offset;
@@ -111,3 +111,56 @@ pub (crate) fn design_vector(features: &[f64], bias: bool) -> DenseVector {
     return x;
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub (crate) struct Stats {
+    pub mean: f64,
+    pub sd: f64
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub (crate) struct Standardizer {
+    stats: Vec<Stats>
+}
+
+impl Standardizer {
+
+    pub fn fit(features: &DenseMatrix) -> Standardizer {
+        let stats = (0..features.ncols()).map(|j| {
+            let mut sum = 0.0;
+            for i in 0..features.nrows() {
+                sum += features[(i, j)];
+            }
+            let mean = sum / features.nrows() as f64;
+            let mut sse = 0.0;
+            for i in 0..features.nrows() {
+                let val = features[(i, j)];
+                sse += (val - mean) * (val - mean);
+            }
+            let sd = (sse / (features.nrows() - 1) as f64).sqrt();
+            Stats { mean, sd }
+        }).collect();
+        Standardizer { stats }
+    }
+
+    pub fn transform_matrix(&self, features: &mut DenseMatrix) {
+        for j in 0..features.ncols() {
+            let stats = &self.stats[j];
+            if stats.sd > 0.0 {
+                for i in 0..features.nrows() {
+                    let val = features[(i, j)];
+                    features[(i, j)] = (val - stats.mean) / stats.sd;
+                }
+            }
+        }
+    }
+
+    pub fn transform_vector(&self, features: &mut DenseVector) {
+        for j in 0..features.len() {
+            let stats = &self.stats[j];
+            if stats.sd > 0.0 {
+                let val = features[j];
+                features[j] = (val - stats.mean) / stats.sd;
+            }
+        }
+    }
+}

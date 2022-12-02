@@ -53,6 +53,10 @@ impl GammaDistribution {
             Ok(GammaDistribution { shape, rate })
         }
     }
+
+    pub (crate) fn vague() -> GammaDistribution {
+        GammaDistribution { shape: 1e-4, rate: 1e-4 }
+    }
 }
 
 impl ScalarDistribution for GammaDistribution {

@@ -2,7 +2,7 @@ use nalgebra::{Cholesky, DVector, DMatrix};
 use special::Gamma;
 use serde::{Serialize, Deserialize};
 
-use crate::{RealLabels, Features, design_vector};
+use crate::{RealLabels, Features, design_vector, Standardizer};
 use crate::error::RegressionError;
 use crate::distribution::{GammaDistribution, GaussianDistribution, ScalarDistribution};
 use crate::math::LN_2PI;
@@ -22,6 +22,8 @@ pub struct LinearTrainConfig {
     pub noise_precision_prior: GammaDistribution,
     /// Whether or not to include a bias term
     pub use_bias: bool,
+    /// Whether or not to standardize the features
+    pub standardize: bool,
     /// Maximum number of training iterations
     pub max_iter: usize,
     /// Convergence criteria threshold
@@ -33,9 +35,10 @@ pub struct LinearTrainConfig {
 impl Default for LinearTrainConfig {
     fn default() -> Self {
         LinearTrainConfig {
-            weight_precision_prior: GammaDistribution::new(1e-4, 1e-4).unwrap(),
+            weight_precision_prior: GammaDistribution::vague(),
             noise_precision_prior: GammaDistribution::new(1.0001, 1e-4).unwrap(),
             use_bias: true,
+            standardize: true,
             max_iter: 1000, 
             tolerance: 1e-4,
             verbose: true
@@ -54,6 +57,8 @@ pub struct VariationalLinearRegression {
     covariance: DenseMatrix,
     /// Whether the model was trained with a bias term or not
     includes_bias: bool,
+    /// Optional feature standardizer
+    standardizer: Option<Standardizer>,
     /// Noise precision distribution
     pub noise_precision: GammaDistribution,
     /// Variational lower bound
@@ -92,6 +97,7 @@ impl VariationalLinearRegression {
                     params: problem.theta, 
                     covariance: problem.s, 
                     includes_bias: config.use_bias,
+                    standardizer: problem.standardizer,
                     noise_precision: problem.beta, 
                     bound: new_bound
                 })
@@ -111,7 +117,10 @@ impl VariationalLinearRegression {
     /// `features` - The vector of feature values
     /// 
     pub fn predict(&self, features: &[f64]) -> Result<GaussianDistribution, RegressionError> {
-        let x = design_vector(features, self.includes_bias);
+        let mut x = design_vector(features, self.includes_bias);
+        if let Some(std) = &self.standardizer {
+            std.transform_vector(&mut x);
+        }
         let npm = self.noise_precision.mean();
         let pred_mean = x.dot(&self.params);
         let pred_var = (1.0 / npm) + (&self.covariance * &x).dot(&x);
@@ -150,7 +159,8 @@ struct Problem {
     pub npp: GammaDistribution,
     pub n: usize,
     pub d: usize,
-    pub bound: f64
+    pub bound: f64,
+    pub standardizer: Option<Standardizer>
 }
 
 impl Problem {
@@ -160,7 +170,15 @@ impl Problem {
         labels: impl RealLabels,
         config: &LinearTrainConfig
     ) -> Problem {
-        let x = features.into_matrix(config.use_bias);
+        let mut x = features.into_matrix(config.use_bias);
+        let standardizer = if config.standardize {
+            Some(Standardizer::fit(&x))
+        } else {
+            None
+        };
+        if let Some(std) = &standardizer {
+            std.transform_matrix(&mut x);
+        }
         let n = x.nrows();
         let d = x.ncols();
         let y = labels.into_vector();
@@ -168,7 +186,7 @@ impl Problem {
         let xty = x.tr_mul(&y);
         let yty = y.dot(&y);
         let bpp = if config.use_bias {
-            Some(GammaDistribution { shape: 1e-4, rate: 1e-4 })
+            Some(GammaDistribution::vague())
         } else {
             None
         };
@@ -182,7 +200,7 @@ impl Problem {
         let bound = f64::NEG_INFINITY;
         let theta = DenseVector::zeros(d);
         let s = DenseMatrix::zeros(d, d);
-        Problem {xtx, xty, yty, theta, s, alpha, beta, bpp, wpp, npp, n, d, bound}
+        Problem { xtx, xty, yty, theta, s, alpha, beta, bpp, wpp, npp, n, d, bound, standardizer }
     }
 
     fn param_precision_prior(&self, ind: usize) -> GammaDistribution {
@@ -338,7 +356,10 @@ mod tests {
     fn test_train() {
         let x = Vec::from(FEATURES.map(Vec::from));
         let y = Vec::from(LABELS);
-        let config = LinearTrainConfig::default();
+        let config = LinearTrainConfig {
+            standardize: false,
+            ..Default::default()
+        };
         let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
         assert_approx_eq!(model.bias().unwrap(), 0.14022283613177447);
         assert_approx_eq!(model.weights()[0], -0.08826080780896867);
@@ -351,7 +372,10 @@ mod tests {
     fn test_predict() {
         let x = Vec::from(FEATURES.map(Vec::from));
         let y = Vec::from(LABELS);
-        let config = LinearTrainConfig::default();
+        let config = LinearTrainConfig {
+            standardize: false,
+            ..Default::default()
+        };
         let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
         let p = model.predict(&vec![0.3, 0.8, -0.1, -0.3]).unwrap();
         assert_approx_eq!(p.mean(), -0.1495143747869945);

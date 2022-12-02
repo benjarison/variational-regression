@@ -3,7 +3,7 @@ use nalgebra::{Cholesky, DVector, DMatrix};
 use special::Gamma;
 use serde::{Serialize, Deserialize};
 
-use crate::{BinaryLabels, Features, design_vector};
+use crate::{BinaryLabels, Features, design_vector, Standardizer};
 use crate::distribution::{GammaDistribution, BernoulliDistribution, ScalarDistribution};
 use crate::error::RegressionError;
 use crate::math::{LN_2PI, logistic, trace_of_product};
@@ -22,6 +22,8 @@ pub struct LogisticTrainConfig {
     pub weight_precision_prior: GammaDistribution,
     /// Whether or not to include a bias term
     pub use_bias: bool,
+    /// Whether or not to standardize the features
+    pub standardize: bool,
     /// Maximum number of training iterations
     pub max_iter: usize,
     /// Convergence criteria threshold
@@ -33,8 +35,9 @@ pub struct LogisticTrainConfig {
 impl Default for LogisticTrainConfig {
     fn default() -> Self {
         LogisticTrainConfig {
-            weight_precision_prior: GammaDistribution::new(1e-4, 1e-4).unwrap(),
+            weight_precision_prior: GammaDistribution::vague(),
             use_bias: true,
+            standardize: true,
             max_iter: 1000, 
             tolerance: 1e-4,
             verbose: true
@@ -53,6 +56,8 @@ pub struct VariationalLogisticRegression {
     covariance: DenseMatrix,
     /// Whether the model was trained with a bias term or not
     includes_bias: bool,
+    /// Optional feature standardizer
+    standardizer: Option<Standardizer>,
     /// Variational lower bound
     pub bound: f64
 }
@@ -89,6 +94,7 @@ impl VariationalLogisticRegression {
                     params: problem.theta, 
                     covariance: problem.s,
                     includes_bias: config.use_bias,
+                    standardizer: problem.standardizer,
                     bound: new_bound
                 })
             } else {
@@ -107,7 +113,10 @@ impl VariationalLogisticRegression {
     /// `features` - The vector of feature values
     /// 
     pub fn predict(&self, features: &[f64]) -> Result<BernoulliDistribution, RegressionError> {
-        let x = design_vector(features, self.includes_bias);
+        let mut x = design_vector(features, self.includes_bias);
+        if let Some(std) = &self.standardizer {
+            std.transform_vector(&mut x);
+        }
         let mu = x.dot(&self.params);
         let s = (&self.covariance * &x).dot(&x);
         let k = 1.0 / (1.0 + (PI * s) / 8.0).sqrt();
@@ -146,7 +155,8 @@ struct Problem {
     pub wpp: GammaDistribution,
     pub n: usize,
     pub d: usize,
-    pub bound: f64
+    pub bound: f64,
+    pub standardizer: Option<Standardizer>
 }
 
 impl Problem {
@@ -156,14 +166,23 @@ impl Problem {
         labels: impl BinaryLabels,
         config: &LogisticTrainConfig
     ) -> Problem {
-        let x = features.into_matrix(config.use_bias);
+        let mut x = features.into_matrix(config.use_bias);
+        let standardizer = if config.standardize {
+            Some(Standardizer::fit(&x))
+        } else {
+            None
+        };
+        if let Some(std) = &standardizer {
+            std.transform_matrix(&mut x);
+            println!("HERE");
+        }
         let n = x.nrows();
         let d = x.ncols();
         let y = labels.into_vector();
         let sxy = compute_sxy(&x, &y, d);
         let wpp = config.weight_precision_prior;
         let bpp = if config.use_bias {
-            Some(GammaDistribution { shape: 1e-4, rate: 1e-4 })
+            Some(GammaDistribution::vague())
         } else {
             None
         };
@@ -175,7 +194,7 @@ impl Problem {
         let bound = f64::NEG_INFINITY;
         let theta = DenseVector::zeros(d);
         let s = DenseMatrix::zeros(d, d);
-        Problem {x, y, sxy, theta, s, alpha, zeta, bpp, wpp, n, d, bound}
+        Problem { x, y, sxy, theta, s, alpha, zeta, bpp, wpp, n, d, bound, standardizer }
     }
 
     fn param_precision_prior(&self, ind: usize) -> GammaDistribution {
@@ -334,7 +353,10 @@ mod tests {
     fn test_train() {
         let x = Vec::from(FEATURES.map(Vec::from));
         let y = Vec::from(LABELS);
-        let config = LogisticTrainConfig::default();
+        let config = LogisticTrainConfig {
+            standardize: false,
+            ..Default::default()
+        };
         let model = VariationalLogisticRegression::train(&x, &y, &config).unwrap();
         assert_approx_eq!(model.bias().unwrap(), 0.0043520654824470515);
         assert_approx_eq!(model.weights()[0], -0.10946450049722892);
@@ -347,7 +369,10 @@ mod tests {
     fn test_predict() {
         let x = Vec::from(FEATURES.map(Vec::from));
         let y = Vec::from(LABELS);
-        let config = LogisticTrainConfig::default();
+        let config = LogisticTrainConfig {
+            standardize: false,
+            ..Default::default()
+        };
         let model = VariationalLogisticRegression::train(&x, &y, &config).unwrap();
         let p = model.predict(&vec![0.3, 0.8, -0.1, -0.3]).unwrap().mean();
         assert_approx_eq!(p, 0.2956358962602995);
