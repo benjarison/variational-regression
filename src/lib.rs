@@ -18,7 +18,19 @@ use nalgebra::{DMatrix, DVector};
 type DenseMatrix = DMatrix<f64>;
 type DenseVector  = DVector<f64>;
 
+///
+/// Represents two dimensional, dense feature data
+/// 
 pub trait Features {
+
+    ///
+    /// Processes the features into a dense matrix
+    /// 
+    /// # Arguments
+    /// 
+    /// `bias` - Whether or not to include a bias term, which
+    ///          results in prepending a column of 1's
+    ///          
     fn into_matrix(self, bias: bool) -> DenseMatrix;
 }
 
@@ -53,7 +65,14 @@ impl Features for &[&[f64]] {
     }
 }
 
+///
+/// Represents continuous, real-valued label data
+/// 
 pub trait RealLabels {
+
+    ///
+    /// Processes the labels into a dense vector
+    /// 
     fn into_vector(self) -> DenseVector;
 }
 
@@ -75,7 +94,14 @@ impl RealLabels for &[f64] {
     }
 }
 
+///
+/// Represents binary label data
+/// 
 pub trait BinaryLabels {
+
+    ///
+    /// Processes the labels into a dense vector
+    /// 
     fn into_vector(self) -> DenseVector;
 }
 

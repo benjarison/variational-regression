@@ -54,6 +54,7 @@ impl GammaDistribution {
         }
     }
 
+    // use as vague prior
     pub (crate) fn vague() -> GammaDistribution {
         GammaDistribution { shape: 1e-4, rate: 1e-4 }
     }
