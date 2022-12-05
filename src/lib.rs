@@ -19,6 +19,32 @@ type DenseMatrix = DMatrix<f64>;
 type DenseVector  = DVector<f64>;
 
 ///
+/// Represents a trained variational regression model with
+/// the specified predictive distribution type
+/// 
+pub trait VariationalRegression<D: ScalarDistribution> {
+
+    ///
+    /// Computes the predictive distribution for the provided features
+    /// 
+    /// # Arguments
+    /// 
+    /// `features` - The input features
+    /// 
+    fn predict(&self, features: &[f64]) -> Result<D, RegressionError>;
+
+    ///
+    /// Provides the model weight parameters
+    /// 
+    fn weights(&self) -> Vec<Parameter>;
+
+    ///
+    /// Provides the model bias parameter, if specified for training
+    /// 
+    fn bias(&self) -> Option<Parameter>;
+}
+
+///
 /// Represents two dimensional, dense feature data
 /// 
 pub trait Features {
@@ -137,6 +163,24 @@ pub (crate) fn design_vector(features: &[f64], bias: bool) -> DenseVector {
     return x;
 }
 
+///
+/// Represents a parameter (weight or bias)
+/// from a trained regression model
+/// 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct Parameter {
+    /// The parameter value
+    pub value: f64,
+    /// The parameter standard error
+    pub error: f64
+}
+
+impl std::fmt::Display for Parameter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:.5} ({:.5})", self.value, self.error)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub (crate) struct Stats {
     pub mean: f64,
@@ -188,5 +232,23 @@ impl Standardizer {
                 features[j] = (val - stats.mean) / stats.sd;
             }
         }
+    }
+}
+
+pub (crate) fn get_weights(includes_bias: bool, params: &DenseVector, covariance: &DenseMatrix) -> Vec<Parameter> {
+    let offset = if includes_bias { 1 } else { 0 };
+    params.as_slice()[offset..].iter()
+    .zip(covariance.diagonal().as_slice()[offset..].iter())
+    .map(|(&value, &variance)| Parameter { value, error: variance.sqrt() })
+    .collect()
+}
+
+pub (crate) fn get_bias(includes_bias: bool, params: &DenseVector, covariance: &DenseMatrix) -> Option<Parameter> {
+    if includes_bias {
+        let value = params[0];
+        let error = covariance[(0, 0)];
+        Some( Parameter { value, error } )
+    } else {
+        None
     }
 }

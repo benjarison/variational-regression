@@ -3,7 +3,7 @@ use nalgebra::{Cholesky, DVector, DMatrix};
 use special::Gamma;
 use serde::{Serialize, Deserialize};
 
-use crate::{BinaryLabels, Features, design_vector, Standardizer};
+use crate::{BinaryLabels, Features, design_vector, Standardizer, Parameter, VariationalRegression, get_weights, get_bias};
 use crate::distribution::{GammaDistribution, BernoulliDistribution, ScalarDistribution};
 use crate::error::RegressionError;
 use crate::math::{LN_2PI, logistic, trace_of_product};
@@ -48,11 +48,11 @@ impl Default for LogisticTrainConfig {
 ///
 /// Represents a logistic regression model trained via variational inference
 /// 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct VariationalLogisticRegression {
     /// Learned model parameters
     params: DenseVector,
-    /// Feature covariance matrix
+    /// Covariance matrix
     covariance: DenseMatrix,
     /// Whether the model was trained with a bias term or not
     includes_bias: bool,
@@ -104,15 +104,11 @@ impl VariationalLogisticRegression {
         // admit defeat
         Err(RegressionError::ConvergenceFailure(config.max_iter))
     }
+}
 
-    ///
-    /// Computes the predictive distribution for the provided features
-    /// 
-    /// # Arguments
-    /// 
-    /// `features` - The vector of feature values
-    /// 
-    pub fn predict(&self, features: &[f64]) -> Result<BernoulliDistribution, RegressionError> {
+impl VariationalRegression<BernoulliDistribution> for VariationalLogisticRegression {
+
+    fn predict(&self, features: &[f64]) -> Result<BernoulliDistribution, RegressionError> {
         let mut x = design_vector(features, self.includes_bias);
         if let Some(std) = &self.standardizer {
             std.transform_vector(&mut x);
@@ -124,27 +120,12 @@ impl VariationalLogisticRegression {
         BernoulliDistribution::new(p)
     }
 
-    ///
-    /// Provides the model weights
-    /// 
-    pub fn weights(&self) -> &[f64] {
-        let params = self.params.as_slice();
-        if self.includes_bias {
-            &params[1..]
-        } else {
-            params
-        }
+    fn weights(&self) -> Vec<Parameter> {
+        get_weights(self.includes_bias, &self.params, &self.covariance)
     }
 
-    ///
-    /// Provides the bias term, if specified during training
-    /// 
-    pub fn bias(&self) -> Option<f64> {
-        if self.includes_bias {
-            Some(self.params[0])
-        } else {
-            None
-        }
+    fn bias(&self) -> Option<Parameter> {
+        get_bias(self.includes_bias, &self.params, &self.covariance)
     }
 }
 
@@ -361,11 +342,11 @@ mod tests {
         let y = Vec::from(LABELS);
         let config = LogisticTrainConfig::default();
         let model = VariationalLogisticRegression::train(&x, &y, &config).unwrap();
-        assert_approx_eq!(model.bias().unwrap(), 0.00951244801510034);
-        assert_approx_eq!(model.weights()[0], -0.19303165213334386);
-        assert_approx_eq!(model.weights()[1], -1.2534945326354745);
-        assert_approx_eq!(model.weights()[2], -0.6963518106208433);
-        assert_approx_eq!(model.weights()[3], -0.8508100398896856);
+        assert_approx_eq!(model.bias().unwrap().value, 0.00951244801510034);
+        assert_approx_eq!(model.weights()[0].value, -0.19303165213334386);
+        assert_approx_eq!(model.weights()[1].value, -1.2534945326354745);
+        assert_approx_eq!(model.weights()[2].value, -0.6963518106208433);
+        assert_approx_eq!(model.weights()[3].value, -0.8508100398896856);
     }
 
     #[test]
@@ -377,11 +358,11 @@ mod tests {
             ..Default::default()
         };
         let model = VariationalLogisticRegression::train(&x, &y, &config).unwrap();
-        assert_approx_eq!(model.bias().unwrap(), 0.0043520654824470515);
-        assert_approx_eq!(model.weights()[0], -0.10946450049722892);
-        assert_approx_eq!(model.weights()[1], -1.6472155373009127);
-        assert_approx_eq!(model.weights()[2], -1.215877178138718);
-        assert_approx_eq!(model.weights()[3], -0.7679465673373882);
+        assert_approx_eq!(model.bias().unwrap().value, 0.0043520654824470515);
+        assert_approx_eq!(model.weights()[0].value, -0.10946450049722892);
+        assert_approx_eq!(model.weights()[1].value, -1.6472155373009127);
+        assert_approx_eq!(model.weights()[2].value, -1.215877178138718);
+        assert_approx_eq!(model.weights()[3].value, -0.7679465673373882);
     }
 
     #[test]
@@ -393,10 +374,10 @@ mod tests {
             ..Default::default()
         };
         let model = VariationalLogisticRegression::train(&x, &y, &config).unwrap();
-        assert_approx_eq!(model.weights()[0], -0.22479264662358672);
-        assert_approx_eq!(model.weights()[1], -1.194338553263914);
-        assert_approx_eq!(model.weights()[2], -0.6763443319536045);
-        assert_approx_eq!(model.weights()[3], -0.793934474799946);
+        assert_approx_eq!(model.weights()[0].value, -0.22479264662358672);
+        assert_approx_eq!(model.weights()[1].value, -1.194338553263914);
+        assert_approx_eq!(model.weights()[2].value, -0.6763443319536045);
+        assert_approx_eq!(model.weights()[3].value, -0.793934474799946);
     }
 
     #[test]
@@ -409,10 +390,10 @@ mod tests {
             ..Default::default()
         };
         let model = VariationalLogisticRegression::train(&x, &y, &config).unwrap();
-        assert_approx_eq!(model.weights()[0], -0.11478846445757208);
-        assert_approx_eq!(model.weights()[1], -1.6111314555274376);
-        assert_approx_eq!(model.weights()[2], -1.0489256680896761);
-        assert_approx_eq!(model.weights()[3], -0.6788653466293544);
+        assert_approx_eq!(model.weights()[0].value, -0.11478846445757208);
+        assert_approx_eq!(model.weights()[1].value, -1.6111314555274376);
+        assert_approx_eq!(model.weights()[2].value, -1.0489256680896761);
+        assert_approx_eq!(model.weights()[3].value, -0.6788653466293544);
     }
 
     #[test]
