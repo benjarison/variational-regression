@@ -161,7 +161,6 @@ impl Problem {
         };
         if let Some(std) = &standardizer {
             std.transform_matrix(&mut x);
-            println!("HERE");
         }
         let n = x.nrows();
         let d = x.ncols();
