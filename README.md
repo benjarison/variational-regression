@@ -4,7 +4,7 @@ Regression models trained using variational inference
 
 ## Motivation
 
-This library provides implementations of Bayesian regression models that learn parameter values by optimizing a variational lower bound on the log likelihood. The benefit of using variational inference is that training is efficient (no sampling required), and we have a well defined objective function to optimize.
+This library provides implementations of Bayesian regression models that learn parameter values by optimizing a variational lower bound on the log likelihood. The benefit of using variational inference is that training is efficient, and we have a well defined objective function to optimize. The Bayesian approach also naturally incorporates regularization into the models.
 
 ## Linear Regression
 
@@ -54,7 +54,7 @@ with the given notation:
 
 ## Reference
 
-The models implemented here are heavily based on those presented in Chapter 10 of "Pattern Recognition and Machine Learning" (Bishop, 2006). However a key difference is that here, each model weight has its own distribution for precision, which facilitates the construction of models with greater sparsity.
+The models implemented here are heavily based on those presented in Chapter 10 of "Pattern Recognition and Machine Learning" (Bishop, 2006). However a key difference is that here, each model weight has its own distribution for precision, as does the noise term for the linear regression model.
 
 ## Examples
 
@@ -110,7 +110,7 @@ use variational_regression::*;
 
 fn main() -> Result<(), RegressionError> {
 
- // construct features
+    // construct features
     let features: &[&[f64]] = &[
         &[-0.2, -0.9, -0.5, 0.3],
         &[0.6, 0.3, 0.3, -0.4],
