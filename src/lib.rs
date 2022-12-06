@@ -34,14 +34,14 @@ pub trait VariationalRegression<D: ScalarDistribution> {
     fn predict(&self, features: &[f64]) -> Result<D, RegressionError>;
 
     ///
-    /// Provides the model weight parameters
+    /// Provides the estimated model weights
     /// 
-    fn weights(&self) -> Vec<Parameter>;
+    fn weights(&self) -> &[f64];
 
     ///
-    /// Provides the model bias parameter, if specified for training
+    /// Provides the estimated model bias, if specified for training
     /// 
-    fn bias(&self) -> Option<Parameter>;
+    fn bias(&self) -> Option<f64>;
 }
 
 ///
@@ -163,24 +163,6 @@ pub (crate) fn design_vector(features: &[f64], bias: bool) -> DenseVector {
     return x;
 }
 
-///
-/// Represents a parameter (weight or bias)
-/// from a trained regression model
-/// 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct Parameter {
-    /// The parameter value
-    pub value: f64,
-    /// The parameter standard error
-    pub error: f64
-}
-
-impl std::fmt::Display for Parameter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:.5} ({:.5})", self.value, self.error)
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub (crate) struct Stats {
     pub mean: f64,
@@ -235,19 +217,14 @@ impl Standardizer {
     }
 }
 
-pub (crate) fn get_weights(includes_bias: bool, params: &DenseVector, covariance: &DenseMatrix) -> Vec<Parameter> {
+pub (crate) fn get_weights<'a>(includes_bias: bool, params: &'a DenseVector) -> &'a [f64] {
     let offset = if includes_bias { 1 } else { 0 };
-    params.as_slice()[offset..].iter()
-    .zip(covariance.diagonal().as_slice()[offset..].iter())
-    .map(|(&value, &variance)| Parameter { value, error: variance.sqrt() })
-    .collect()
+    &params.as_slice()[offset..]
 }
 
-pub (crate) fn get_bias(includes_bias: bool, params: &DenseVector, covariance: &DenseMatrix) -> Option<Parameter> {
+pub (crate) fn get_bias(includes_bias: bool, params: &DenseVector) -> Option<f64> {
     if includes_bias {
-        let value = params[0];
-        let error = covariance[(0, 0)];
-        Some( Parameter { value, error } )
+        Some( params[0])
     } else {
         None
     }

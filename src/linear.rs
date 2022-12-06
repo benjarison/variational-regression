@@ -2,7 +2,7 @@ use nalgebra::{Cholesky, DVector, DMatrix};
 use special::Gamma;
 use serde::{Serialize, Deserialize};
 
-use crate::{RealLabels, Features, design_vector, Standardizer, Parameter, VariationalRegression, get_weights, get_bias};
+use crate::{RealLabels, Features, design_vector, Standardizer, VariationalRegression, get_weights, get_bias};
 use crate::error::RegressionError;
 use crate::distribution::{GammaDistribution, GaussianDistribution, ScalarDistribution};
 use crate::math::LN_2PI;
@@ -123,12 +123,12 @@ impl VariationalRegression<GaussianDistribution> for VariationalLinearRegression
         GaussianDistribution::new(pred_mean, pred_var)
     }
 
-    fn weights(&self) -> Vec<Parameter> {
-        get_weights(self.includes_bias, &self.params, &self.covariance)
+    fn weights(&self) -> &[f64] {
+        get_weights(self.includes_bias, &self.params)
     }
 
-    fn bias(&self) -> Option<Parameter> {
-        get_bias(self.includes_bias, &self.params, &self.covariance)
+    fn bias(&self) -> Option<f64> {
+        get_bias(self.includes_bias, &self.params)
     }
 }
 
@@ -345,11 +345,11 @@ mod tests {
         let y = Vec::from(LABELS);
         let config = LinearTrainConfig::default();
         let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
-        assert_approx_eq!(model.bias().unwrap().value, 0.009795973392064526);
-        assert_approx_eq!(model.weights()[0].value, -0.053736076572620695);
-        assert_approx_eq!(model.weights()[1].value, 0.002348926942734912);
-        assert_approx_eq!(model.weights()[2].value, 0.36479166380848826);
-        assert_approx_eq!(model.weights()[3].value, 0.2995772527448547);
+        assert_approx_eq!(model.bias().unwrap(), 0.009795973392064526);
+        assert_approx_eq!(model.weights()[0], -0.053736076572620695);
+        assert_approx_eq!(model.weights()[1], 0.002348926942734912);
+        assert_approx_eq!(model.weights()[2], 0.36479166380848826);
+        assert_approx_eq!(model.weights()[3], 0.2995772527448547);
     }
 
     #[test]
@@ -361,11 +361,11 @@ mod tests {
             ..Default::default()
         };
         let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
-        assert_approx_eq!(model.bias().unwrap().value, 0.14022283613177447);
-        assert_approx_eq!(model.weights()[0].value, -0.08826080780896867);
-        assert_approx_eq!(model.weights()[1].value, 0.003684347234472394);
-        assert_approx_eq!(model.weights()[2].value, 1.1209335465339734);
-        assert_approx_eq!(model.weights()[3].value, 0.5137103057008632);
+        assert_approx_eq!(model.bias().unwrap(), 0.14022283613177447);
+        assert_approx_eq!(model.weights()[0], -0.08826080780896867);
+        assert_approx_eq!(model.weights()[1], 0.003684347234472394);
+        assert_approx_eq!(model.weights()[2], 1.1209335465339734);
+        assert_approx_eq!(model.weights()[3], 0.5137103057008632);
     }
 
     #[test]
@@ -377,10 +377,10 @@ mod tests {
             ..Default::default()
         };
         let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
-        assert_approx_eq!(model.weights()[0].value, -0.0536007042304908);
-        assert_approx_eq!(model.weights()[1].value, 0.0024537840396777044);
-        assert_approx_eq!(model.weights()[2].value, 0.3649008472250164);
-        assert_approx_eq!(model.weights()[3].value, 0.2997887456881104);
+        assert_approx_eq!(model.weights()[0], -0.0536007042304908);
+        assert_approx_eq!(model.weights()[1], 0.0024537840396777044);
+        assert_approx_eq!(model.weights()[2], 0.3649008472250164);
+        assert_approx_eq!(model.weights()[3], 0.2997887456881104);
     }
 
     #[test]
@@ -393,10 +393,10 @@ mod tests {
             ..Default::default()
         };
         let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
-        assert_approx_eq!(model.weights()[0].value, -0.0362564312306051);
-        assert_approx_eq!(model.weights()[1].value, 0.021598779423334057);
-        assert_approx_eq!(model.weights()[2].value, 0.9458928058270641);
-        assert_approx_eq!(model.weights()[3].value, 0.4751696529319309);
+        assert_approx_eq!(model.weights()[0], -0.0362564312306051);
+        assert_approx_eq!(model.weights()[1], 0.021598779423334057);
+        assert_approx_eq!(model.weights()[2], 0.9458928058270641);
+        assert_approx_eq!(model.weights()[3], 0.4751696529319309);
     }
 
     #[test]
