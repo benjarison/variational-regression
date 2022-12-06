@@ -258,7 +258,7 @@ fn expect_ln_p_y(prob: &Problem) -> Result<f64, RegressionError> {
     Ok(part2 + part4 - part5 - part6 - part7 + part8)
 }
 
-// Expceted log probability of parameter values conditioned on their precisions
+// Expected log probability of parameter values conditioned on their precisions
 fn expect_ln_p_theta(prob: &Problem) -> Result<f64, RegressionError> {
     let init = (prob.theta.len() as f64 * -0.5) * LN_2PI;
     prob.alpha.iter().enumerate().try_fold(init, |sum, (i, a)| {
@@ -269,7 +269,7 @@ fn expect_ln_p_theta(prob: &Problem) -> Result<f64, RegressionError> {
     })
 }
 
-// Expceted log probability of the parameter value precisions
+// Expected log probability of the parameter value precisions
 fn expect_ln_p_alpha(prob: &Problem) -> Result<f64, RegressionError> {
     prob.alpha.iter().enumerate().try_fold(0.0, |sum, (i, a)| {
         let am = a.mean();
