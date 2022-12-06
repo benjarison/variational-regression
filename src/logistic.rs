@@ -6,7 +6,7 @@ use serde::{Serialize, Deserialize};
 use crate::{BinaryLabels, Features, design_vector, Standardizer, VariationalRegression, get_weights, get_bias};
 use crate::distribution::{GammaDistribution, BernoulliDistribution, ScalarDistribution};
 use crate::error::RegressionError;
-use crate::math::{LN_2PI, logistic, trace_of_product};
+use crate::math::{LN_2PI, logistic, trace_of_product, scale_rows};
 
 type DenseVector = DVector<f64>;
 type DenseMatrix = DMatrix<f64>;
@@ -200,7 +200,7 @@ fn q_theta(prob: &mut Problem) -> Result<(), RegressionError> {
     let a = DenseVector::from(prob.alpha.iter().map(|alpha| alpha.mean()).collect::<Vec<f64>>());
     let mut s_inv = DenseMatrix::from_diagonal(&a);
     let lambdas = prob.zeta.map(|z| lambda(z));
-    s_inv += prob.x.tr_mul(&scale(&prob.x, &lambdas)) * 2.0;
+    s_inv += prob.x.tr_mul(&scale_rows(&prob.x, &lambdas)) * 2.0;
     prob.s = Cholesky::new(s_inv)
         .ok_or(RegressionError::CholeskyFailure)?
         .inverse();
@@ -245,7 +245,7 @@ fn expect_ln_p_y(prob: &Problem) -> Result<f64, RegressionError> {
     let part4 = (&part3.transpose() * prob.y.map(|y| y - 0.5)).sum();
     let part5 = prob.zeta.sum() / 2.0;
     let part6 = (part3.map(|v| v * v).transpose() * &part1).sum();
-    let part7 = trace_of_product(&scale(&(&prob.x * &prob.s), &part1), &prob.x.transpose());
+    let part7 = trace_of_product(&scale_rows(&(&prob.x * &prob.s), &part1), &prob.x.transpose());
     let part8 = part1.component_mul(&prob.zeta.map(|z| z * z)).sum();
     Ok(part2 + part4 - part5 - part6 - part7 + part8)
 }
@@ -293,17 +293,6 @@ fn expect_ln_q_alpha(prob: &Problem) -> Result<f64, RegressionError> {
         let part3 = a.shape - a.rate.ln();
         Ok(sum - (part1 - part2 + part3))
     })
-}
-
-// Scale each matrix row by the corresponding vector element
-fn scale(matrix: &DenseMatrix, vector: &DenseVector) -> DenseMatrix {
-    let mut scaled = matrix.clone();
-    for i in 0..matrix.nrows() {
-        for j in 0..matrix.ncols() {
-            scaled[(i, j)] *= vector[i];
-        }
-    }
-    return scaled;
 }
 
 #[cfg(test)]
