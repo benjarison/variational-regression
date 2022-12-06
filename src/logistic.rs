@@ -245,7 +245,7 @@ fn lower_bound(prob: &Problem) -> Result<f64, RegressionError> {
     expect_ln_q_alpha(prob)?)
 }
 
-// Expected log probability of labels conditioned on parameter values
+// E[ln p(y|theta)]
 fn expect_ln_p_y(prob: &Problem) -> Result<f64, RegressionError> {
     let part1 = prob.zeta.map(lambda);
     let part2 = prob.zeta.map(|z| logistic(z).ln()).sum();
@@ -258,7 +258,7 @@ fn expect_ln_p_y(prob: &Problem) -> Result<f64, RegressionError> {
     Ok(part2 + part4 - part5 - part6 - part7 + part8)
 }
 
-// Expected log probability of parameter values conditioned on their precisions
+// E[ln p(theta|alpha)]
 fn expect_ln_p_theta(prob: &Problem) -> Result<f64, RegressionError> {
     let init = (prob.theta.len() as f64 * -0.5) * LN_2PI;
     prob.alpha.iter().enumerate().try_fold(init, |sum, (i, a)| {
@@ -269,7 +269,7 @@ fn expect_ln_p_theta(prob: &Problem) -> Result<f64, RegressionError> {
     })
 }
 
-// Expected log probability of the parameter value precisions
+// E[ln p(alpha)]
 fn expect_ln_p_alpha(prob: &Problem) -> Result<f64, RegressionError> {
     prob.alpha.iter().enumerate().try_fold(0.0, |sum, (i, a)| {
         let am = a.mean();
@@ -281,7 +281,7 @@ fn expect_ln_p_alpha(prob: &Problem) -> Result<f64, RegressionError> {
     })
 }
 
-// Expected entropy of the parameter values
+// E[ln q(theta)]
 fn expect_ln_q_theta(prob: &Problem) -> Result<f64, RegressionError> {
     let m = prob.s.shape().0;
     let chol = Cholesky::new(prob.s.clone()).unwrap().l();
@@ -293,7 +293,7 @@ fn expect_ln_q_theta(prob: &Problem) -> Result<f64, RegressionError> {
     Ok(-(0.5 * ln_det + (m as f64 / 2.0) * (1.0 + LN_2PI)))
 }
 
-// Expected entropy of the parameter precisions
+// E[ln q(alpha)]
 fn expect_ln_q_alpha(prob: &Problem) -> Result<f64, RegressionError> {
     prob.alpha.iter().try_fold(0.0, |sum, a| {
         let part1 = Gamma::ln_gamma(a.shape).0;
