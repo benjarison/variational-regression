@@ -11,7 +11,7 @@ type DenseVector = DVector<f64>;
 type DenseMatrix = DMatrix<f64>;
 
 ///
-/// Specifies configurable hyperparameters for training a 
+/// Specifies configurable options for training a 
 /// variational linear regression model
 /// 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -134,20 +134,20 @@ impl VariationalRegression<GaussianDistribution> for VariationalLinearRegression
 
 // Defines the regression problem
 struct Problem {
-    pub xtx: DenseMatrix,
-    pub xty: DenseVector,
-    pub yty: f64,
-    pub theta: DenseVector,
-    pub s: DenseMatrix,
-    pub alpha: Vec<GammaDistribution>,
-    pub beta: GammaDistribution,
-    pub bpp: Option<GammaDistribution>,
-    pub wpp: GammaDistribution,
-    pub npp: GammaDistribution,
-    pub n: usize,
-    pub d: usize,
-    pub bound: f64,
-    pub standardizer: Option<Standardizer>
+    pub xtx: DenseMatrix, // t(x) * x
+    pub xty: DenseVector, // t(x) * y
+    pub yty: f64, // t(y) * y
+    pub theta: DenseVector, // parameters (bias & weights)
+    pub s: DenseMatrix, // covariance
+    pub alpha: Vec<GammaDistribution>, // parameter precisions
+    pub beta: GammaDistribution, // noise precision
+    pub bpp: Option<GammaDistribution>, // bias prior precision
+    pub wpp: GammaDistribution, // weight prior precision
+    pub npp: GammaDistribution, // noise prior precision
+    pub n: usize, // number of training examples
+    pub d: usize, // feature dimensionality (including bias)
+    pub bound: f64, // variational lower bound
+    pub standardizer: Option<Standardizer> // feature standardizer
 }
 
 impl Problem {

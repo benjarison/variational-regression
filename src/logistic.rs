@@ -13,7 +13,7 @@ type DenseMatrix = DMatrix<f64>;
 
 
 ///
-/// Specifies configurable hyperparameters for training a 
+/// Specifies configurable options for training a 
 /// variational logistic regression model
 /// 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,19 +131,19 @@ impl VariationalRegression<BernoulliDistribution> for VariationalLogisticRegress
 
 // Defines the regression problem
 struct Problem {
-    pub x: DenseMatrix,
-    pub y: DenseVector,
-    pub sxy: DenseVector,
-    pub theta: DenseVector,
-    pub s: DenseMatrix,
-    pub alpha: Vec<GammaDistribution>,
-    pub zeta: DenseVector,
-    pub bpp: Option<GammaDistribution>,
-    pub wpp: GammaDistribution,
-    pub n: usize,
-    pub d: usize,
-    pub bound: f64,
-    pub standardizer: Option<Standardizer>
+    pub x: DenseMatrix, // features
+    pub y: DenseVector, // labels
+    pub xtr: DenseVector, // t(x) * (y - 0.5)
+    pub theta: DenseVector, // parameters (bias & weights)
+    pub s: DenseMatrix, // covariance
+    pub alpha: Vec<GammaDistribution>, // parameter precisions
+    pub zeta: DenseVector, // variational parameters
+    pub bpp: Option<GammaDistribution>, // bias prior precision
+    pub wpp: GammaDistribution, // weight prior precision
+    pub n: usize, // number of training examples
+    pub d: usize, // feature dimensionality (inclusing bias)
+    pub bound: f64, // variational lower bound
+    pub standardizer: Option<Standardizer> // feature standardizer
 }
 
 impl Problem {
@@ -165,7 +165,7 @@ impl Problem {
         let n = x.nrows();
         let d = x.ncols();
         let y = labels.into_vector();
-        let sxy = compute_sxy(&x, &y, d);
+        let xtr = x.tr_mul(&y.map(|v| v - 0.5));
         let wpp = config.weight_precision_prior;
         let bpp = if config.use_bias {
             Some(GammaDistribution::vague())
@@ -180,7 +180,7 @@ impl Problem {
         let bound = f64::NEG_INFINITY;
         let theta = DenseVector::zeros(d);
         let s = DenseMatrix::zeros(d, d);
-        Problem { x, y, sxy, theta, s, alpha, zeta, bpp, wpp, n, d, bound, standardizer }
+        Problem { x, y, xtr, theta, s, alpha, zeta, bpp, wpp, n, d, bound, standardizer }
     }
 
     fn param_precision_prior(&self, ind: usize) -> GammaDistribution {
@@ -191,15 +191,6 @@ impl Problem {
     }
 }
 
-fn compute_sxy(x: &DenseMatrix, y: &DenseVector, d: usize) -> DenseVector {
-    let mut sxy = DenseVector::zeros(d);
-    for i in 0..y.len() {
-        let t = y[i] - 0.5;
-        sxy += x.row(i).transpose() * t;
-    }
-    sxy
-}
-
 fn lambda(val: f64) -> f64 {
     (1.0 / (2.0 * val)) * (logistic(val) - 0.5)
 }
@@ -208,12 +199,12 @@ fn lambda(val: f64) -> f64 {
 fn q_theta(prob: &mut Problem) -> Result<(), RegressionError> {
     let a = DenseVector::from(prob.alpha.iter().map(|alpha| alpha.mean()).collect::<Vec<f64>>());
     let mut s_inv = DenseMatrix::from_diagonal(&a);
-    let w = prob.zeta.map(|z| lambda(z) * 2.0);
-    s_inv += prob.x.tr_mul(&scale(&prob.x, &w));
+    let lambdas = prob.zeta.map(|z| lambda(z));
+    s_inv += prob.x.tr_mul(&scale(&prob.x, &lambdas)) * 2.0;
     prob.s = Cholesky::new(s_inv)
         .ok_or(RegressionError::CholeskyFailure)?
         .inverse();
-    prob.theta = &prob.s * &prob.sxy;
+    prob.theta = &prob.s * &prob.xtr;
     Ok(())
 }
 
@@ -227,6 +218,7 @@ fn q_alpha(prob: &mut Problem) -> Result<(), RegressionError> {
     Ok(())
 }
 
+// Update zeta values
 fn update_zeta(prob: &mut Problem) -> Result<(), RegressionError> {
     let a = &prob.s + (&prob.theta * prob.theta.transpose());
     let iter = prob.x.row_iter().map(|xi| {
@@ -303,6 +295,7 @@ fn expect_ln_q_alpha(prob: &Problem) -> Result<f64, RegressionError> {
     })
 }
 
+// Scale each matrix row by the corresponding vector element
 fn scale(matrix: &DenseMatrix, vector: &DenseVector) -> DenseMatrix {
     let mut scaled = matrix.clone();
     for i in 0..matrix.nrows() {
