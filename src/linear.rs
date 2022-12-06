@@ -36,7 +36,7 @@ impl Default for LinearTrainConfig {
     fn default() -> Self {
         LinearTrainConfig {
             weight_precision_prior: GammaDistribution::vague(),
-            noise_precision_prior: GammaDistribution::new(1.0001, 1e-4).unwrap(),
+            noise_precision_prior: GammaDistribution::new(1.0, 1e-4).unwrap(),
             use_bias: true,
             standardize: true,
             max_iter: 1000, 
@@ -343,7 +343,10 @@ mod tests {
     fn test_train_with_bias_with_standardize() {
         let x = Vec::from(FEATURES.map(Vec::from));
         let y = Vec::from(LABELS);
-        let config = LinearTrainConfig::default();
+        let config = LinearTrainConfig {
+            noise_precision_prior: GammaDistribution { shape: 1.0001, rate: 1e-4 },
+            ..Default::default()
+        };
         let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
         assert_approx_eq!(model.bias().unwrap(), 0.009795973392064526);
         assert_approx_eq!(model.weights()[0], -0.053736076572620695);
@@ -358,6 +361,7 @@ mod tests {
         let y = Vec::from(LABELS);
         let config = LinearTrainConfig {
             standardize: false,
+            noise_precision_prior: GammaDistribution { shape: 1.0001, rate: 1e-4 },
             ..Default::default()
         };
         let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
@@ -374,6 +378,7 @@ mod tests {
         let y = Vec::from(LABELS);
         let config = LinearTrainConfig {
             use_bias: false,
+            noise_precision_prior: GammaDistribution { shape: 1.0001, rate: 1e-4 },
             ..Default::default()
         };
         let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
@@ -390,6 +395,7 @@ mod tests {
         let config = LinearTrainConfig {
             use_bias: false,
             standardize: false,
+            noise_precision_prior: GammaDistribution { shape: 1.0001, rate: 1e-4 },
             ..Default::default()
         };
         let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
@@ -403,7 +409,10 @@ mod tests {
     fn test_predict_with_bias_with_standardize() {
         let x = Vec::from(FEATURES.map(Vec::from));
         let y = Vec::from(LABELS);
-        let config = LinearTrainConfig::default();
+        let config = LinearTrainConfig {
+            noise_precision_prior: GammaDistribution { shape: 1.0001, rate: 1e-4 },
+            ..Default::default()
+        };
         let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
         let p = model.predict(&vec![0.3, 0.8, -0.1, -0.3]).unwrap();
         assert_approx_eq!(p.mean(), -0.1601830957057508);
@@ -416,6 +425,7 @@ mod tests {
         let y = Vec::from(LABELS);
         let config = LinearTrainConfig {
             standardize: false,
+            noise_precision_prior: GammaDistribution { shape: 1.0001, rate: 1e-4 },
             ..Default::default()
         };
         let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
@@ -430,6 +440,7 @@ mod tests {
         let y = Vec::from(LABELS);
         let config = LinearTrainConfig {
             use_bias: false,
+            noise_precision_prior: GammaDistribution { shape: 1.0001, rate: 1e-4 },
             ..Default::default()
         };
         let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
@@ -445,6 +456,7 @@ mod tests {
         let config = LinearTrainConfig {
             use_bias: false,
             standardize: false,
+            noise_precision_prior: GammaDistribution { shape: 1.0001, rate: 1e-4 },
             ..Default::default()
         };
         let model = VariationalLinearRegression::train(&x, &y, &config).unwrap();
