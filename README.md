@@ -2,6 +2,9 @@
 
 Regression models trained using variational inference
 
+[![crates.io](https://img.shields.io/crates/v/variational-regression.svg)](https://crates.io/crates/variational-regression)
+![License](https://img.shields.io/crates/l/variational-regression.svg)
+
 ## Motivation
 
 This library provides implementations of Bayesian regression models that learn parameter values by optimizing a variational lower bound on the log likelihood. The benefit of using variational inference is that training is efficient, and we have a well defined objective function to optimize. The Bayesian approach also naturally incorporates regularization into the models.
